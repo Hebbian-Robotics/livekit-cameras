@@ -1455,6 +1455,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "livekit-camera-frames"
+version = "0.1.0"
+dependencies = [
+ "cameras",
+ "livekit",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+]
+
+[[package]]
 name = "livekit-camera-publisher"
 version = "0.1.0"
 dependencies = [

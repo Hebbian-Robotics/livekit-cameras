@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["native/cameras", "native/publisher", "native/recorder"]
+members = ["native/cameras", "native/publisher", "native/recorder", "native/frames"]
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }

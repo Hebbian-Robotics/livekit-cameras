@@ -196,7 +196,32 @@ impl RawCapturedFrame {
 
     fn convert(self, include_jpeg: bool) -> Result<CapturedFrame, CameraError> {
         let conversion_started = Instant::now();
-        let rgb = self.buffer.decode_image::<RgbFormat>()?;
+        // Nokhwa's optional MJPEG decoder and WebRTC both link JPEG symbols;
+        // use the pure-Rust image decoder so they can coexist under strict linkers.
+        let rgb = if self.buffer.source_frame_format() == FrameFormat::MJPEG {
+            let data = self.buffer.buffer();
+            let decoded = image::load_from_memory_with_format(data, image::ImageFormat::Jpeg)
+                .or_else(|original_error| {
+                    // Some UVC MJPEG frames omit standard Huffman tables. The AVI1
+                    // marker tells the decoder to supply those defaults.
+                    if !data.starts_with(&[0xff, 0xd8]) {
+                        return Err(original_error);
+                    }
+                    let mut mjpeg = Vec::with_capacity(data.len() + 9);
+                    mjpeg.extend_from_slice(&data[..2]);
+                    mjpeg.extend_from_slice(b"\xff\xe0\x00\x07AVI1\0");
+                    mjpeg.extend_from_slice(&data[2..]);
+                    image::load_from_memory_with_format(&mjpeg, image::ImageFormat::Jpeg)
+                })?
+                .into_rgb8();
+            let resolution = self.buffer.resolution();
+            if decoded.width() != resolution.width() || decoded.height() != resolution.height() {
+                return Err(CameraError::InvalidFrame);
+            }
+            decoded
+        } else {
+            self.buffer.decode_image::<RgbFormat>()?
+        };
         // ImageBuffer permits trailing bytes; encode only its declared pixels.
         let rgb_length = usize::try_from(u64::from(rgb.width()) * u64::from(rgb.height()) * 3)
             .map_err(|_| CameraError::InvalidFrame)?;
@@ -230,6 +255,70 @@ impl Drop for CameraCapture {
 #[cfg(test)]
 mod platform_tests {
     use super::*;
+
+    #[test]
+    fn mjpeg_capture_converts_to_video_and_preserves_receipt_time() -> Result<(), CameraError> {
+        let jpeg = rgb_to_jpeg(2, 2, &[255, 0, 0].repeat(4))?;
+        let frame = RawCapturedFrame {
+            buffer: nokhwa::Buffer::new(
+                nokhwa::utils::Resolution::new(2, 2),
+                &jpeg,
+                FrameFormat::MJPEG,
+            ),
+            captured_at_unix_ns: 123,
+            capture_wait: Duration::ZERO,
+        };
+        let converted = frame.into_video()?;
+        assert_eq!(converted.captured_at_unix_ns, 123);
+        assert_eq!((converted.i420.width, converted.i420.height), (2, 2));
+        assert_eq!(converted.i420.data.len(), 6);
+        assert!(
+            converted
+                .i420
+                .planes()?
+                .y
+                .iter()
+                .all(|value| (60..100).contains(value))
+        );
+        assert_eq!(converted.jpeg.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn mjpeg_without_huffman_tables_uses_standard_tables() -> Result<(), CameraError> {
+        let jpeg = rgb_to_jpeg(2, 2, &[255, 0, 0].repeat(4))?;
+        let mut without_tables = jpeg[..2].to_vec();
+        let mut offset = 2;
+        while jpeg[offset + 1] != 0xda {
+            let segment_length =
+                usize::from(u16::from_be_bytes([jpeg[offset + 2], jpeg[offset + 3]]));
+            let segment_end = offset + 2 + segment_length;
+            if jpeg[offset + 1] != 0xc4 {
+                without_tables.extend_from_slice(&jpeg[offset..segment_end]);
+            }
+            offset = segment_end;
+        }
+        without_tables.extend_from_slice(&jpeg[offset..]);
+        let frame = RawCapturedFrame {
+            buffer: nokhwa::Buffer::new(
+                nokhwa::utils::Resolution::new(2, 2),
+                &without_tables,
+                FrameFormat::MJPEG,
+            ),
+            captured_at_unix_ns: 123,
+            capture_wait: Duration::ZERO,
+        };
+        let converted = frame.into_video()?;
+        assert!(
+            converted
+                .i420
+                .planes()?
+                .y
+                .iter()
+                .all(|value| (60..100).contains(value))
+        );
+        Ok(())
+    }
 
     #[test]
     fn each_supported_platform_selects_its_native_backend() {

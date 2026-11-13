@@ -10,20 +10,20 @@ publish = false
 clap = { version = "4.6.7", features = ["derive"] }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 # Published 2026-10-23; keep capture backend changes deliberate.
-nokhwa = "=0.10.10"
+nokhwa = { version = "=0.10.10", default-features = false }
 thiserror = "2"
 yuv = "0.8.20"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-nokhwa = { version = "=0.10.10", features = ["input-v4l"] }
+nokhwa = { version = "=0.10.10", default-features = false, features = ["input-v4l"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-nokhwa = { version = "=0.10.10", features = ["input-avfoundation"] }
+nokhwa = { version = "=0.10.10", default-features = false, features = ["input-avfoundation"] }
 # 0.2.4 changes the callback signature and does not compile with nokhwa 0.10.10.
 nokhwa-bindings-macos = "=0.2.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-nokhwa = { version = "=0.10.10", features = ["input-msmf"] }
+nokhwa = { version = "=0.10.10", default-features = false, features = ["input-msmf"] }
 
 [lints]
 workspace = true

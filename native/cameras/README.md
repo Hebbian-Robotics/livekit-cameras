@@ -21,6 +21,9 @@ The capture tool does not support URLs or video files.
 
 Capture uses nokhwa **=0.10.10**. V4L2 on Linux, AVFoundation on macOS and Media Foundation
 on Windows are enabled. Windows camera capture requires validation on Windows hardware.
+MJPEG frames use the Rust JPEG decoder from `image`; frames without Huffman tables
+fall back to standard MJPEG tables. This avoids conflicting JPEG symbols when
+the capture library is linked with LiveKit's WebRTC library.
 Linux builds need libclang for the V4L2 bindings (Ubuntu: `libclang-dev`), and GLib development headers for the publisher. macOS requires camera access for the terminal
 running the binary; initialization requests permission before enumeration.
 

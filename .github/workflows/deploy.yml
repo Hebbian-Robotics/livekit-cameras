@@ -42,6 +42,10 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: echo 'CXX=clang++-21' >> "$GITHUB_ENV"
+      - name: Match the Windows WebRTC runtime
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo 'RUSTFLAGS=-C target-feature=+crt-static' >> "$GITHUB_ENV"
       - name: Check and test Rust
         shell: bash
         run: |

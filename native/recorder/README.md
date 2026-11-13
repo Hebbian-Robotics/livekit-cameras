@@ -20,3 +20,18 @@ present, are Unix microseconds; otherwise frame arrival time is used. These are
 not guaranteed exposure times or synchronized clocks. Frames can be dropped.
 The synchronous output methods may be called concurrently; a slow destination
 can slow encoding and increase dropped frames. Return an error when output fails.
+
+A destination can be shared with the recorder as follows (error handling and
+credential acquisition belong to the application):
+
+```rust,ignore
+let output: Arc<dyn VideoOutput> = Arc::new(my_output);
+let stop = CancellationToken::new();
+record_room(&server_url, &subscribe_token, &output, false, stop.clone()).await?;
+```
+
+Call `stop.cancel()` from another task to finalize the recording. The packet
+callback receives Annex B H.264 with Unix nanosecond timestamps. Segment events
+report dimensions and boundaries; output implementations should synchronize their
+own writes. A track error is reported as a `CameraError` event, and other tracks
+continue recording.

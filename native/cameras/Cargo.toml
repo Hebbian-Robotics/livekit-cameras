@@ -24,6 +24,8 @@ nokhwa-bindings-macos = "=0.2.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 nokhwa = { version = "=0.10.10", default-features = false, features = ["input-msmf"] }
+# 0.4.6 changed raw_bytes incompatibly with nokhwa 0.10.10.
+nokhwa-bindings-windows = "=0.4.5"
 
 [lints]
 workspace = true

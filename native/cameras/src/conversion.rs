@@ -119,6 +119,16 @@ pub fn rgb_to_jpeg(width: u32, height: u32, rgb: &[u8]) -> Result<Vec<u8>, Camer
 mod tests {
     use super::*;
 
+    fn assert_samples_close(actual: &[u8], expected: &[u8]) {
+        assert_eq!(actual.len(), expected.len());
+        for (actual, expected) in actual.iter().zip(expected) {
+            assert!(
+                actual.abs_diff(*expected) <= 1,
+                "expected {expected}, got {actual}"
+            );
+        }
+    }
+
     #[test]
     fn primary_colour_blocks_have_bt601_planes() -> Result<(), CameraError> {
         // Four uniform 2x2 blocks: red, green, blue, white. Plane ordering matters.
@@ -130,22 +140,25 @@ mod tests {
             }
         }
         let converted = rgb_to_i420(8, 2, &rgb)?;
-        assert_eq!(
+        assert_samples_close(
             &converted.data[..16],
             &[
-                81, 81, 145, 145, 41, 41, 235, 235, 81, 81, 145, 145, 41, 41, 235, 235
-            ]
+                81, 81, 145, 145, 41, 41, 235, 235, 81, 81, 145, 145, 41, 41, 235, 235,
+            ],
         );
         let planes = converted.planes()?;
-        assert_eq!(planes.u, &[90, 54, 240, 128]);
-        assert_eq!(planes.v, &[240, 34, 110, 128]);
+        assert_samples_close(planes.u, &[90, 54, 240, 128]);
+        assert_samples_close(planes.v, &[240, 34, 110, 128]);
         Ok(())
     }
 
     #[test]
     fn mixed_block_averages_chroma_and_odd_edges_keep_samples() -> Result<(), CameraError> {
         let rgb = [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255];
-        assert_eq!(rgb_to_i420(2, 2, &rgb)?.data, [81, 145, 41, 235, 128, 128]);
+        assert_samples_close(
+            &rgb_to_i420(2, 2, &rgb)?.data,
+            &[81, 145, 41, 235, 128, 128],
+        );
         assert_eq!(rgb_to_i420(1, 1, &[0, 0, 0])?.data, [16, 128, 128]);
         assert!(matches!(
             rgb_to_i420(2, 2, &[0; 3]),

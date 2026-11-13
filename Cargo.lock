@@ -236,6 +236,7 @@ dependencies = [
  "image",
  "nokhwa",
  "nokhwa-bindings-macos",
+ "nokhwa-bindings-windows",
  "thiserror 2.0.21",
  "yuv",
 ]
@@ -1467,6 +1468,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "livekit-camera-recorder"
+version = "0.1.0"
+dependencies = [
+ "cameras",
+ "chrono",
+ "livekit",
+ "nix",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+]
+
+[[package]]
 name = "livekit-common"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1760,9 +1775,9 @@ dependencies = [
 
 [[package]]
 name = "nokhwa-bindings-windows"
-version = "0.4.6"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5be28886bad8abcec3655c1f24b965b4cb596a72b23164c910c54439ce55d2a4"
+checksum = "899799275c93ef69bbe8cb888cf6f8249abe751cbc50be5299105022aec14a1c"
 dependencies = [
  "nokhwa-core",
  "once_cell",

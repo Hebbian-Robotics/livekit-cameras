@@ -1,0 +1,16 @@
+[package]
+name = "livekit-camera-invite"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+publish = false
+
+[dependencies]
+base64 = "0.22"
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+thiserror = "2"
+url = "2"
+
+[lints]
+workspace = true

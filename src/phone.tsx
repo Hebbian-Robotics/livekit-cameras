@@ -383,9 +383,12 @@ function PhoneCamera() {
   return (
     <main className="phone-camera">
       <header className="phone-header">
-        <div>
-          <p className="phone-brand">LiveKit camera publisher</p>
-          <h1>Phone camera</h1>
+        <div className="phone-branding">
+          <img className="phone-logo" src="./hebbian-logo.svg" alt="" />
+          <div>
+            <p className="phone-brand">Hebbian Robotics</p>
+            <h1>Phone camera</h1>
+          </div>
         </div>
         <span
           className={`connection-badge ${cameraState === "streaming" ? "is-live" : ""}`}

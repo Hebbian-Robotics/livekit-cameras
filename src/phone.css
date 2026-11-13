@@ -23,6 +23,17 @@ body {
   justify-content: space-between;
   gap: 16px;
 }
+.phone-branding {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.phone-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+}
 .phone-brand {
   margin: 0 0 3px;
   color: var(--muted);

@@ -30,3 +30,8 @@ The `CXX` setting applies to Linux with clang 21; use the platform's supported
 compiler elsewhere. Explain which devices and LiveKit server you tested, and
 identify hardware or platforms you could not test. Contributions are accepted
 under this repository's [MIT license](LICENSE).
+
+On Windows, LiveKit's prebuilt WebRTC library uses the static MSVC runtime.
+Set `RUSTFLAGS=-C target-feature=+crt-static` for native builds, as CI does.
+The matrix compiles, links and runs non-hardware tests on Linux, macOS and
+Windows. Camera devices and hardware encoders still require device testing.

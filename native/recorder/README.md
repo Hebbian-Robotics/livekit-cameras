@@ -35,3 +35,7 @@ callback receives Annex B H.264 with Unix nanosecond timestamps. Segment events
 report dimensions and boundaries; output implementations should synchronize their
 own writes. A track error is reported as a `CameraError` event, and other tracks
 continue recording.
+
+For Windows builds, set `RUSTFLAGS=-C target-feature=+crt-static` to match
+LiveKit's prebuilt WebRTC runtime. CI uses this setting when linking native tests
+and executables.

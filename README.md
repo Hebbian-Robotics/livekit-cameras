@@ -198,3 +198,5 @@ dependencies, WebRTC archive, and native system libraries have their own
 licenses; review and include applicable notices when distributing native builds.
 
 Native recording primitives are documented in [native/recorder](native/recorder/README.md).
+
+For still images used by model calls, see the [latest-frame API](native/frames/README.md).

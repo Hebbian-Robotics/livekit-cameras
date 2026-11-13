@@ -71,3 +71,35 @@ fn encode_jpeg(
     }
     cameras::conversion::rgb_to_jpeg(out_width, out_height, &rgb).ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn jpeg_pixels_follow_video_rotation() -> Result<(), Box<dyn std::error::Error>> {
+        let mut buffer = livekit::webrtc::video_frame::I420Buffer::new(32, 16);
+        let (y, u, v) = buffer.data_mut();
+        for row in y.chunks_mut(32) {
+            row[..16].fill(32);
+            row[16..].fill(220);
+        }
+        u.fill(128);
+        v.fill(128);
+        for (rotation, dimensions, dark, bright) in [
+            (VideoRotation::VideoRotation0, (32, 16), (4, 8), (28, 8)),
+            (VideoRotation::VideoRotation90, (16, 32), (8, 4), (8, 28)),
+            (VideoRotation::VideoRotation180, (32, 16), (28, 8), (4, 8)),
+            (VideoRotation::VideoRotation270, (16, 32), (8, 28), (8, 4)),
+        ] {
+            let frame = camera_frame(&buffer, rotation, 123, Instant::now())?;
+            assert_eq!((frame.width, frame.height), dimensions);
+            assert_eq!(frame.captured_at_unix_ns, 123);
+            let image = image::load_from_memory(&frame.jpeg)?.to_luma8();
+            assert_eq!(image.dimensions(), dimensions);
+            assert!(image.get_pixel(dark.0, dark.1)[0] < 50);
+            assert!(image.get_pixel(bright.0, bright.1)[0] > 200);
+        }
+        Ok(())
+    }
+}

@@ -16,3 +16,6 @@ tokio-util = { version = "0.7", features = ["rt"] }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["jpeg"] }

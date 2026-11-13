@@ -39,3 +39,18 @@ Conversion runs away from the async executor, with one conversion per track at a
 time. The SDK's latest-frame queue bounds pending video instead of building a
 backlog. This API exposes snapshots; live browser playback should subscribe to
 LiveKit directly.
+
+## Live-room integration check
+
+Start a local LiveKit development server on port 7880. Supply
+`TEST_VIEWER_TOKEN` (subscribe permission) and `TEST_PUBLISHER_TOKEN` (publish
+permission) for the same test room, then run:
+
+```sh
+cargo test -p livekit-camera-frames --test room -- --ignored
+```
+
+This publishes generated video without opening a camera. It checks separate
+tracks, late arrival, image availability, unsubscription and cancellation cleanup.
+The normal workspace suite also checks latest-image replacement, shared readers
+and all four rotations by decoding the resulting JPEG pixels.

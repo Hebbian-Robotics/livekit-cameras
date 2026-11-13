@@ -1459,6 +1459,7 @@ name = "livekit-camera-frames"
 version = "0.1.0"
 dependencies = [
  "cameras",
+ "image",
  "livekit",
  "thiserror 2.0.21",
  "tokio",

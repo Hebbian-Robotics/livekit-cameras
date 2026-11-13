@@ -1,16 +1,19 @@
-# Phone camera for LiveKit
+# LiveKit camera tools
 
-Stream your phone's camera into any LiveKit room from a browser. Open a link or
-scan a QR code, allow camera access, and tap **Start streaming**. No app install
-or phone-side backend connection is needed.
+Stream camera video into a LiveKit room from a browser or a native publisher.
 
-**[Open the camera page](https://hebbian-robotics.github.io/phone-camera/)**
+## Browser camera
+
+Open a link or scan a QR code, allow camera access, and tap **Start streaming**.
+No app install or device-side backend connection is needed.
+
+**[Open the camera page](https://hebbian-robotics.github.io/livekit-cameras/)**
 
 We use phones as extra cameras in our robotics setups when we don't have enough
 dedicated cameras. This app works with any application that can subscribe to a
 LiveKit camera video track.
 
-## Use it
+### Use it
 
 You need a LiveKit Cloud project or a reachable self-hosted LiveKit server, and a
 participant token for the room you want to publish into. Paste the server's
@@ -20,7 +23,7 @@ The app publishes video only, targeting 720p at 15 fps without simulcast. It
 supports portrait/landscape output, a 180-degree flip, rear lens selection and
 zoom where the browser exposes them, reconnect status, and a screen wake lock
 where supported. Camera controls affect the published video, not just the preview.
-Keep the page visible and the phone unlocked; mobile browsers may suspend capture
+Keep the page visible and the device unlocked; mobile browsers may suspend capture
 in the background. Lens and zoom availability varies by device and browser.
 
 Subscribers join the same room using their own tokens and subscribe to the
@@ -28,7 +31,7 @@ camera track. The publisher's LiveKit participant identity is the camera name;
 use a different identity for every camera. Reusing an identity can disconnect an
 existing participant.
 
-## Generate an invite and QR code
+### Generate an invite and QR code
 
 Install Node.js 24 and pnpm, then run `pnpm install --frozen-lockfile`.
 Set these environment variables on your trusted computer or backend:
@@ -46,7 +49,7 @@ The [TypeScript example](examples/create-invite.ts) prints a link and writes
 `invite.svg`. It signs a token valid for one hour that permits joining the named
 room and publishing camera video, with subscription and data publishing disabled.
 API credentials are used locally and are never included in the link. Set
-`PHONE_PAGE_URL` to use a self-hosted copy of the app.
+`CAMERA_PAGE_URL` to use a self-hosted copy of the app.
 
 Your own backend can implement the same interface in any language using a LiveKit
 server SDK. There is no dependency on this repository's TypeScript code:
@@ -60,14 +63,14 @@ must include a participant identity (`sub`) and grants to join your chosen room
 and publish camera video. LiveKit verifies the token; the page only decodes its
 identity and expiration for display. A room name alone does not grant access.
 
-## Optional recording integration
+### Optional recording integration
 
 Set LiveKit room metadata to `{"recording": true}` to show a recording indicator
 and lock orientation, flip, lens and zoom controls. Set `recording` to `false` or
 omit it to unlock. This is an app convention, not automatic detection of LiveKit
 Egress or an access-control mechanism. Other metadata fields are ignored.
 
-## Privacy and access
+### Privacy and access
 
 Treat invite links and QR codes as secrets: anyone holding one can use its token
 until it expires. Use short-lived, room-scoped, camera-only tokens and unique
@@ -80,7 +83,7 @@ browser history. Lens selection is stored locally. There are no analytics,
 third-party runtime scripts, microphone capture, or API secrets in the app.
 Video travels through your configured LiveKit service to authorized subscribers.
 
-## Develop and host
+### Develop and host
 
 ```sh
 pnpm install --frozen-lockfile
@@ -102,8 +105,53 @@ your fork. No LiveKit credentials are needed to build or deploy the page.
 
 LiveKit supplies the underlying [camera publishing APIs](https://docs.livekit.io/transport/media/publish/)
 and [LiveKit Meet for testing rooms](https://docs.livekit.io/reference/developer-tools/livekit-cli/rooms/).
-This project provides a focused phone camera interface around those APIs and is
+This project provides a browser camera interface around those APIs and is
 not an official LiveKit product.
+
+## Native camera publisher
+
+The Rust workspace includes a native camera capture crate (`cameras`) and a
+LiveKit publisher crate (`livekit-camera-publisher`). The publisher accepts a
+LiveKit URL and a pre-issued camera-publishing token. Generate the token on a
+trusted backend and use a distinct identity for each camera.
+
+```sh
+export LIVEKIT_URL='wss://your-project.livekit.cloud'
+export LIVEKIT_TOKEN='<camera-publishing-token>'
+cargo run --release -p livekit-camera-publisher -- --name front --device /dev/video0
+cargo run -p cameras -- list
+```
+
+The native publisher uses the newest available frame, at up to 15 fps, and
+publishes a camera track without simulcast. It records host receipt time as
+frame metadata; this is not the sensor exposure time. Persistent device paths
+retry on failure, whereas numeric indices stop to avoid accidentally selecting
+a different camera after reconnection. Capture runs in a subprocess so a
+blocked camera read can be stopped.
+
+Library users can use the `cameras` crate directly or `publish_camera` in the
+publisher crate with their own URL and token. `CaptureWorker` starts the
+current executable with the private `__capture` subcommand. An executable
+embedding the worker must dispatch that subcommand to `capture::run_capture_process`
+before starting its normal argument parser. This also applies to snapshot
+consumers using the worker directly.
+
+Native Linux builds need libclang and GLib development headers, and the
+LiveKit WebRTC C++ build needs clang 21 or newer. For example:
+
+```sh
+CXX=clang++-21 cargo build -p livekit-camera-publisher
+cargo fmt --all
+CXX=clang++-21 cargo clippy --all-targets --all-features
+CXX=clang++-21 cargo test --workspace
+```
+
+Real-camera and live-room behavior must be verified on the intended hardware.
+The capture backend supports Linux, macOS and Windows, but native publishing
+and camera behavior have not been validated on macOS or Windows.
+
+For an upstream comparison and additional diagnostic tools, see LiveKit's
+[local video example](https://github.com/livekit/rust-sdks/tree/main/examples/local_video).
 
 ## License
 

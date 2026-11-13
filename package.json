@@ -1,8 +1,8 @@
 {
-  "name": "@hebbian/phone-camera",
+  "name": "@hebbian/browser-camera",
   "version": "0.1.0",
   "private": true,
-  "description": "Stream your phone camera to any LiveKit room from a browser.",
+  "description": "Stream a browser camera to any LiveKit room.",
   "license": "MIT",
   "type": "module",
   "engines": {

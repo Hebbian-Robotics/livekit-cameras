@@ -387,7 +387,7 @@ function PhoneCamera() {
           <img className="phone-logo" src="./hebbian-logo.svg" alt="" />
           <div>
             <p className="phone-brand">Hebbian Robotics</p>
-            <h1>Phone camera</h1>
+            <h1>Browser camera</h1>
           </div>
         </div>
         <span
@@ -401,7 +401,7 @@ function PhoneCamera() {
         </span>
       </header>
       <p className="phone-intro">
-        Place your phone where you need a camera. Keep this page open while
+        Place your device where you need a camera. Keep this page open while
         streaming.
       </p>
       {!invite && (
@@ -549,7 +549,7 @@ function PhoneCamera() {
       </button>
       <footer className="phone-footer">
         <a
-          href="https://github.com/Hebbian-Robotics/phone-camera"
+          href="https://github.com/Hebbian-Robotics/livekit-cameras"
           aria-label="View the source code on GitHub"
         >
           <span className="visually-hidden">

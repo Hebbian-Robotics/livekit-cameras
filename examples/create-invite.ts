@@ -12,7 +12,7 @@ const accessToken = new AccessToken(
   requiredEnvironmentVariable("LIVEKIT_API_KEY"),
   requiredEnvironmentVariable("LIVEKIT_API_SECRET"),
   {
-    identity: process.env["CAMERA_IDENTITY"] ?? "phone-camera",
+    identity: process.env["CAMERA_IDENTITY"] ?? "browser_camera",
     ttl: "1h",
   },
 );
@@ -25,8 +25,8 @@ accessToken.addGrant({
   canPublishData: false,
 });
 const cameraPageUrl = new URL(
-  process.env["PHONE_PAGE_URL"] ??
-    "https://hebbian-robotics.github.io/phone-camera/",
+  process.env["CAMERA_PAGE_URL"] ??
+    "https://hebbian-robotics.github.io/livekit-cameras/",
 );
 cameraPageUrl.hash = new URLSearchParams({
   url: requiredEnvironmentVariable("LIVEKIT_URL"),

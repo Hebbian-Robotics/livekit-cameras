@@ -159,6 +159,7 @@ async function createOrientedOutput(
 
 function PhoneCamera() {
   const [invite, setInvite] = useState(readInvite);
+  const inviteRef = useRef(invite);
   const [cameraSnapshot, sendCameraEvent] = useMachine(phoneCameraMachine, {
     input: { start: () => startCamera(), stop: () => closeSession() },
   });
@@ -241,7 +242,8 @@ function PhoneCamera() {
   }
 
   async function startCamera(): Promise<void> {
-    if (!invite) return;
+    const currentInvite = inviteRef.current;
+    if (!currentInvite) return;
     const currentGeneration = ++generation.current;
     setStatus("Connecting…");
     const room = new Room({ adaptiveStream: false, dynacast: false });
@@ -279,7 +281,7 @@ function PhoneCamera() {
         });
       sendCameraEvent({ type: "PREPARED" });
       stage = "connect";
-      await room.connect(invite.serverUrl, invite.token);
+      await room.connect(currentInvite.serverUrl, currentInvite.token);
       if (generation.current !== currentGeneration) {
         output.stop();
         track.stop();
@@ -315,7 +317,9 @@ function PhoneCamera() {
       await room.disconnect().catch(() => {});
       if (generation.current !== currentGeneration) return;
       sendCameraEvent({ type: "FAIL" });
-      setStatus(phoneStartError(error, stage, decodeJwt(invite.token).exp));
+      setStatus(
+        phoneStartError(error, stage, decodeJwt(currentInvite.token).exp),
+      );
     }
   }
 
@@ -414,7 +418,8 @@ function PhoneCamera() {
                 throw new Error(
                   "The token must include a participant identity.",
                 );
-              setInvite({ serverUrl, token, cameraName });
+              inviteRef.current = { serverUrl, token, cameraName };
+              setInvite(inviteRef.current);
               setStatus("Ready to stream.");
             } catch (error: unknown) {
               setStatus(errorMessage(error, "Invalid connection details."));

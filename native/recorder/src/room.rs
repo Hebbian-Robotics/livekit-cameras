@@ -53,11 +53,16 @@ pub async fn record_room(
                 participant,
                 ..
             }) => {
-                let camera_name = participant.identity().to_string();
+                let participant_identity = participant.identity().to_string();
+                let track_sid = track.sid().to_string();
+                let Some(camera_name) = archive.camera_name(&participant_identity, &track_sid)
+                else {
+                    continue;
+                };
                 if cameras::validate_camera_name(&camera_name).is_err() {
                     continue;
                 }
-                if let Some(previous) = recorders.remove(&camera_name) {
+                if let Some(previous) = recorders.remove(&track_sid) {
                     previous.stopped.cancel();
                     if let Err(error) = previous.task.await {
                         eprintln!("Recording {camera_name}: {error}");
@@ -89,7 +94,7 @@ pub async fn record_room(
                     }
                 });
                 recorders.insert(
-                    camera_name,
+                    track_sid,
                     CameraTask {
                         stopped: camera_stopped,
                         task,

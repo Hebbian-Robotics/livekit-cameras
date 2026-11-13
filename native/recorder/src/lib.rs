@@ -35,6 +35,10 @@ pub enum VideoEvent<'a> {
 }
 
 pub trait VideoOutput: Send + Sync {
+    /// Choose a stable output name for a participant and track.
+    fn camera_name(&self, _participant_identity: &str, track_sid: &str) -> Option<String> {
+        Some(track_sid.to_ascii_lowercase())
+    }
     /// # Errors
     /// Returns an error when the destination cannot accept the packet.
     fn video(&self, camera: &str, timestamp: u64, packet: Vec<u8>) -> Result<(), RecorderError>;

@@ -196,3 +196,5 @@ Its [third-party license notices](https://hebbian-robotics.github.io/livekit-cam
 are generated from the production dependencies at build time. The source
 dependencies, WebRTC archive, and native system libraries have their own
 licenses; review and include applicable notices when distributing native builds.
+
+Native recording primitives are documented in [native/recorder](native/recorder/README.md).

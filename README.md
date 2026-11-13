@@ -155,4 +155,12 @@ For an upstream comparison and additional diagnostic tools, see LiveKit's
 
 ## License
 
-MIT. Copyright Hebbian Robotics.
+MIT. Copyright Hebbian Robotics. See [LICENSE](LICENSE). Contributions are
+welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). To report a vulnerability,
+see [SECURITY.md](SECURITY.md).
+
+The hosted browser bundle includes third-party code under its own licenses.
+Its [third-party license notices](https://hebbian-robotics.github.io/livekit-cameras/third-party-licenses.txt)
+are generated from the production dependencies at build time. The source
+dependencies, WebRTC archive, and native system libraries have their own
+licenses; review and include applicable notices when distributing native builds.

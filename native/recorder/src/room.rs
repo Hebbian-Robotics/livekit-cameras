@@ -22,6 +22,7 @@ fn frame_time(user_timestamp: Option<u64>, arrival_ns: u64) -> Result<u64, Recor
 }
 
 struct CameraTask {
+    name: String,
     stopped: CancellationToken,
     task: tokio::task::JoinHandle<()>,
 }
@@ -62,7 +63,10 @@ pub async fn record_room(
                 if cameras::validate_camera_name(&camera_name).is_err() {
                     continue;
                 }
-                if let Some(previous) = recorders.remove(&track_sid) {
+                let previous_track = recorders.iter().find_map(|(sid, recorder)| {
+                    (sid == &track_sid || recorder.name == camera_name).then(|| sid.clone())
+                });
+                if let Some(previous) = previous_track.and_then(|sid| recorders.remove(&sid)) {
                     previous.stopped.cancel();
                     if let Err(error) = previous.task.await {
                         eprintln!("Recording {camera_name}: {error}");
@@ -96,6 +100,7 @@ pub async fn record_room(
                 recorders.insert(
                     track_sid,
                     CameraTask {
+                        name: camera_name,
                         stopped: camera_stopped,
                         task,
                     },

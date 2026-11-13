@@ -229,3 +229,81 @@ input:focus-visible {
   color: var(--ink);
   font: inherit;
 }
+
+.app-nav {
+  display: flex;
+  gap: 4px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: max(12px, env(safe-area-inset-top)) 20px 0;
+}
+.app-nav button {
+  flex: 1;
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+.app-nav button[aria-current="page"] {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+.app-nav button:focus-visible,
+.camera-select select:focus-visible {
+  outline: 3px solid #4e9ec6;
+  outline-offset: 3px;
+}
+.phone-camera {
+  min-height: calc(100dvh - 54px);
+  padding-top: 18px;
+}
+.viewer-page {
+  justify-content: flex-start;
+}
+.camera-select {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-weight: 600;
+}
+.camera-select select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+.feed-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));
+  gap: 12px;
+}
+.feed-tile {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.feed-tile video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: #242424;
+}
+.feed-tile div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+}
+.feed-tile span {
+  color: var(--muted);
+  font-size: 13px;
+}

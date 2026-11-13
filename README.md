@@ -108,6 +108,38 @@ and [LiveKit Meet for testing rooms](https://docs.livekit.io/reference/developer
 This project provides a browser camera interface around those APIs and is
 not an official LiveKit product.
 
+## Room viewer
+
+The **Room viewer** tab watches video already published to a LiveKit room,
+without opening the physical camera a second time. This lets other subscribers
+continue receiving the same track. Switching between the Stream and Room viewer
+tabs keeps an active browser-camera publication running. After camera access is
+granted, the Stream tab can also select from available local camera devices.
+
+A camera that is only available to a local application and is not published to
+LiveKit cannot be viewed through the room viewer. Direct browser access to a
+camera may conflict with another application already using it, so this page does
+not offer a separate local-only camera preview.
+
+Room viewer displays video tracks from participants in a LiveKit room, including
+cameras that join later. It does not request a camera or play audio. Provide the
+LiveKit server URL and a token granting room join and subscription. A publishing
+invite from `pnpm invite` is publish-only and cannot watch the room. The viewer
+is a participant and consumes your LiveKit project's resources.
+
+To create a one-hour, subscribe-only viewer link on a trusted computer, set
+`LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, and `LIVEKIT_ROOM` as
+shown above, then run:
+
+```sh
+pnpm viewer-invite
+```
+
+Optionally set `VIEWER_IDENTITY`; otherwise the example generates a unique
+identity. Keep the resulting link secret: it permits the holder to watch media
+in that room. As with publishing links, the token is carried in the URL fragment
+and may remain in browser history. The page never receives the API secret.
+
 ## Native camera publisher
 
 The Rust workspace includes a native camera capture crate (`cameras`) and a

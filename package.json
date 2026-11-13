@@ -17,7 +17,8 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "vitest run",
-    "invite": "tsx examples/create-invite.ts"
+    "invite": "tsx examples/create-invite.ts",
+    "viewer-invite": "tsx examples/create-viewer-invite.ts"
   },
   "dependencies": {
     "@xstate/react": "^6.1.0",

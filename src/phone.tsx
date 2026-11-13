@@ -11,8 +11,8 @@ import {
   VideoPresets,
 } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
 import { errorMessage } from "./errors.js";
+import { liveKitServerUrl } from "./livekit-url.js";
 import { phoneCameraMachine } from "./phone-camera-machine.js";
 import { type PhoneStartStage, phoneStartError } from "./phone-errors.js";
 import {
@@ -38,10 +38,12 @@ type CameraSession = {
   room: Room;
   track: LocalVideoTrack;
   stopOutput: () => void;
+  refreshOutput: () => Promise<void>;
 };
 
 function readInvite(): Invite | null {
   const parameters = new URLSearchParams(location.hash.slice(1));
+  if (parameters.get("view") === "room") return null;
   const serverUrl = parameters.get("url");
   const token = parameters.get("token");
   if (!serverUrl || !token) return null;
@@ -84,7 +86,11 @@ async function createOrientedOutput(
   cameraTrack: LocalVideoTrack,
   orientation: { current: CameraOrientation },
   flipped: { current: boolean },
-): Promise<{ track: LocalVideoTrack; stop: () => void }> {
+): Promise<{
+  track: LocalVideoTrack;
+  stop: () => void;
+  refresh: () => Promise<void>;
+}> {
   const source = document.createElement("video");
   source.muted = true;
   source.playsInline = true;
@@ -145,6 +151,10 @@ async function createOrientedOutput(
     animationFrame = requestAnimationFrame(drawFrame);
     return {
       track: new LocalVideoTrack(output, undefined, true),
+      refresh: async () => {
+        source.srcObject = new MediaStream([cameraTrack.mediaStreamTrack]);
+        await source.play();
+      },
       stop: () => {
         cancelAnimationFrame(animationFrame);
         output.stop();
@@ -157,7 +167,7 @@ async function createOrientedOutput(
   }
 }
 
-function PhoneCamera() {
+export function PhoneCamera() {
   const [invite, setInvite] = useState(readInvite);
   const inviteRef = useRef(invite);
   const [cameraSnapshot, sendCameraEvent] = useMachine(phoneCameraMachine, {
@@ -180,6 +190,7 @@ function PhoneCamera() {
   const [flipped, setFlipped] = useState(false);
   const flippedRef = useRef(false);
   const [lenses, setLenses] = useState<Lens[]>([]);
+  const [cameras, setCameras] = useState<Lens[]>([]);
   const [activeLens, setActiveLens] = useState<string | undefined>();
   const [zoom, setZoom] = useState<{ range: ZoomRange; value: number } | null>(
     null,
@@ -225,13 +236,27 @@ function PhoneCamera() {
     setStatus("Not streaming.");
     setRecording(false);
     setLenses([]);
+    setCameras([]);
     setZoom(null);
   }, [sendCameraEvent]);
 
   async function updateCameraControls(track: LocalVideoTrack): Promise<void> {
-    const available = await backLenses().catch((): Lens[] => []);
+    const [available, devices] = await Promise.all([
+      backLenses().catch((): Lens[] => []),
+      navigator.mediaDevices
+        .enumerateDevices()
+        .catch((): MediaDeviceInfo[] => []),
+    ]);
     if (session.current?.track !== track) return;
     setLenses(available);
+    setCameras(
+      devices
+        .filter((device) => device.kind === "videoinput" && device.deviceId)
+        .map((device, index) => ({
+          deviceId: device.deviceId,
+          name: device.label || `Camera ${index + 1}`,
+        })),
+    );
     setActiveLens(track.mediaStreamTrack.getSettings().deviceId);
     const range = zoomRange(track.mediaStreamTrack);
     setZoom(
@@ -304,7 +329,12 @@ function PhoneCamera() {
         await room.disconnect();
         return;
       }
-      session.current = { room, track, stopOutput: output.stop };
+      session.current = {
+        room,
+        track,
+        stopOutput: output.stop,
+        refreshOutput: output.refresh,
+      };
       sendCameraEvent({ type: "PUBLISHED" });
       setStatus("Live: publishing camera video to the room.");
       setRecording(roomIsRecording(room));
@@ -331,6 +361,11 @@ function PhoneCamera() {
         ...captureOptions(),
         deviceId: { exact: lens.deviceId },
       });
+      if (session.current !== current) {
+        current.track.stop();
+        return;
+      }
+      await current.refreshOutput();
       rememberLens(lens.deviceId);
     } catch (error: unknown) {
       setStatus(
@@ -352,25 +387,22 @@ function PhoneCamera() {
   }
 
   useEffect(() => {
-    const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
-    function applySystemTheme(): void {
-      document.documentElement.setAttribute(
-        "data-theme",
-        systemTheme.matches ? "dark" : "light",
-      );
-    }
-    applySystemTheme();
-    systemTheme.addEventListener("change", applySystemTheme);
-    return () => systemTheme.removeEventListener("change", applySystemTheme);
-  }, []);
-
-  useEffect(() => {
     function onVisibilityChange(): void {
       const current = session.current;
       if (document.hidden || !current) return;
       void keepScreenAwake();
       if (current.track.mediaStreamTrack.readyState === "ended")
-        void current.track.restartTrack();
+        void current.track
+          .restartTrack()
+          .then(async () => {
+            if (session.current === current) await current.refreshOutput();
+            else current.track.stop();
+          })
+          .catch((error: unknown) => {
+            setStatus(
+              `Could not restart camera: ${errorMessage(error, "unknown error")}`,
+            );
+          });
       if (current.room.state === ConnectionState.Disconnected) stop();
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -413,9 +445,7 @@ function PhoneCamera() {
             const serverUrl = String(fields.get("serverUrl") ?? "").trim();
             const token = String(fields.get("token") ?? "").trim();
             try {
-              const parsedUrl = new URL(serverUrl);
-              if (parsedUrl.protocol !== "wss:")
-                throw new Error("Use a wss:// LiveKit server URL.");
+              liveKitServerUrl(serverUrl);
               const cameraName = decodeJwt(token).sub;
               if (!cameraName)
                 throw new Error(
@@ -491,6 +521,30 @@ function PhoneCamera() {
           Flip 180°
         </button>
       </fieldset>
+      {cameras.length > 1 && (
+        <label className="camera-select">
+          Camera
+          <select
+            value={activeLens ?? ""}
+            disabled={recording}
+            onChange={(event) => {
+              const camera = cameras.find(
+                (item) => item.deviceId === event.currentTarget.value,
+              );
+              if (camera) void switchLens(camera);
+            }}
+          >
+            <option value="" disabled>
+              Select a camera
+            </option>
+            {cameras.map((camera) => (
+              <option key={camera.deviceId} value={camera.deviceId}>
+                {camera.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {lenses.length > 1 && (
         <fieldset className="lenses">
           <legend>Lens</legend>
@@ -569,7 +623,3 @@ function PhoneCamera() {
     </main>
   );
 }
-
-const root = document.getElementById("root");
-if (!root) throw new Error("Phone camera root is missing");
-createRoot(root).render(<PhoneCamera />);

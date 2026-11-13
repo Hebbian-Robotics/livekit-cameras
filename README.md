@@ -1,0 +1,110 @@
+# Phone camera for LiveKit
+
+Stream your phone's camera into any LiveKit room from a browser. Open a link or
+scan a QR code, allow camera access, and tap **Start streaming**. No app install
+or phone-side backend connection is needed.
+
+**[Open the camera page](https://hebbian-robotics.github.io/phone-camera/)**
+
+We use phones as extra cameras in our robotics setups when we don't have enough
+dedicated cameras. This app works with any application that can subscribe to a
+LiveKit camera video track.
+
+## Use it
+
+You need a LiveKit Cloud project or a reachable self-hosted LiveKit server, and a
+participant token for the room you want to publish into. Paste the server's
+`wss://` URL and token into the page, or generate an invite link below.
+
+The app publishes video only, targeting 720p at 15 fps without simulcast. It
+supports portrait/landscape output, a 180-degree flip, rear lens selection and
+zoom where the browser exposes them, reconnect status, and a screen wake lock
+where supported. Camera controls affect the published video, not just the preview.
+Keep the page visible and the phone unlocked; mobile browsers may suspend capture
+in the background. Lens and zoom availability varies by device and browser.
+
+Subscribers join the same room using their own tokens and subscribe to the
+camera track. The publisher's LiveKit participant identity is the camera name;
+use a different identity for every camera. Reusing an identity can disconnect an
+existing participant.
+
+## Generate an invite and QR code
+
+Install Node.js 24 and pnpm, then run `pnpm install --frozen-lockfile`.
+Set these environment variables on your trusted computer or backend:
+
+```sh
+export LIVEKIT_URL='wss://your-project.livekit.cloud'
+export LIVEKIT_API_KEY='your-api-key'
+export LIVEKIT_API_SECRET='your-api-secret'
+export LIVEKIT_ROOM='your-room'
+export CAMERA_IDENTITY='phone-table'
+pnpm invite
+```
+
+The [TypeScript example](examples/create-invite.ts) prints a link and writes
+`invite.svg`. It signs a token valid for one hour that permits joining the named
+room and publishing camera video, with subscription and data publishing disabled.
+API credentials are used locally and are never included in the link. Set
+`PHONE_PAGE_URL` to use a self-hosted copy of the app.
+
+Your own backend can implement the same interface in any language using a LiveKit
+server SDK. There is no dependency on this repository's TypeScript code:
+
+```text
+https://your-camera-page.example/#url=<encoded-livekit-url>&token=<encoded-jwt>
+```
+
+Construct the fragment with a URL encoder, such as `URLSearchParams`. The JWT
+must include a participant identity (`sub`) and grants to join your chosen room
+and publish camera video. LiveKit verifies the token; the page only decodes its
+identity and expiration for display. A room name alone does not grant access.
+
+## Optional recording integration
+
+Set LiveKit room metadata to `{"recording": true}` to show a recording indicator
+and lock orientation, flip, lens and zoom controls. Set `recording` to `false` or
+omit it to unlock. This is an app convention, not automatic detection of LiveKit
+Egress or an access-control mechanism. Other metadata fields are ignored.
+
+## Privacy and access
+
+Treat invite links and QR codes as secrets: anyone holding one can use its token
+until it expires. Use short-lived, room-scoped, camera-only tokens and unique
+participant identities. The hosting operator's JavaScript can read tokens, so
+only use a hosted page you trust or host your own copy.
+
+Tokens in URL fragments are not sent in HTTP page requests. Manually pasted
+tokens stay in memory; the app does not persist them. Invite URLs can remain in
+browser history. Lens selection is stored locally. There are no analytics,
+third-party runtime scripts, microphone capture, or API secrets in the app.
+Video travels through your configured LiveKit service to authorized subscribers.
+
+## Develop and host
+
+```sh
+pnpm install --frozen-lockfile
+pnpm dev
+pnpm format
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+```
+
+Serve `dist/` on any static HTTPS host. Relative asset URLs support GitHub Pages
+project paths. Camera access requires HTTPS (or localhost during development).
+For development on a physical phone, use an HTTPS development origin.
+
+The GitHub Actions workflow validates every push and pull request, and deploys
+`main` to GitHub Pages. Set **Settings → Pages → Source → GitHub Actions** in
+your fork. No LiveKit credentials are needed to build or deploy the page.
+
+LiveKit supplies the underlying [camera publishing APIs](https://docs.livekit.io/transport/media/publish/)
+and [LiveKit Meet for testing rooms](https://docs.livekit.io/reference/developer-tools/livekit-cli/rooms/).
+This project provides a focused phone camera interface around those APIs and is
+not an official LiveKit product.
+
+## License
+
+MIT. Copyright Hebbian Robotics.

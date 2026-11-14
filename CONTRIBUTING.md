@@ -63,7 +63,9 @@ Cargo manifests and lockfile. Compiler variables are set before restoring the
 cache, including Windows' static runtime flag. The browser job caches pnpm's
 store. Only main-branch Rust jobs save caches; pull requests can restore them.
 A cold run still compiles dependencies, and cached runs still execute tests and
-build the native executables.
+build the native executables. Superseded pull-request runs are cancelled. Main
+runs finish independently so a later documentation-only push cannot cancel an
+outstanding Rust check. Pages deployment verifies the latest main revision.
 
 ## Code and documentation
 

@@ -50,6 +50,21 @@ Update the LiveKit SDK and signaling dependency together, and verify capture
 backend changes on the OS matrix. Keep linker and sccache choices machine-local
 so contributors and portable builds can use their platform defaults.
 
+## CI scope and caching
+
+Native source, Cargo configuration, lockfiles and workflow changes run the Rust
+matrix on all three operating systems. Browser inputs run lint, tests and a
+build that includes typechecking. Documentation-only changes run link checks and
+Biome without compiling Rust or deploying the browser app. Manual workflow runs
+always run every check.
+
+Rust dependency artifacts are cached by platform, compiler/toolchain settings,
+Cargo manifests and lockfile. Compiler variables are set before restoring the
+cache, including Windows' static runtime flag. The browser job caches pnpm's
+store. Only main-branch Rust jobs save caches; pull requests can restore them.
+A cold run still compiles dependencies, and cached runs still execute tests and
+build the native executables.
+
 ## Code and documentation
 
 Use descriptive names, explicit types and exhaustive variants where practical.

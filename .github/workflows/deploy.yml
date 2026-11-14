@@ -14,7 +14,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      native: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.native == 'true' }}
+      browser: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.browser == 'true' }}
+      docs: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.docs == 'true' }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          base: ${{ github.ref }}
+          predicate-quantifier: some-with-excludes
+          filters: |
+            native:
+              - 'native/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - '.cargo/**'
+              - 'rust-toolchain*'
+              - '.github/workflows/**'
+              - '!**/*.md'
+            browser:
+              - '**'
+              - '!native/**'
+              - '!Cargo.toml'
+              - '!Cargo.lock'
+              - '!.cargo/**'
+              - '!rust-toolchain*'
+              - '!**/*.md'
+              - '!LICENSE*'
+              - '!NOTICE*'
+            docs:
+              - '**/*.md'
+              - 'LICENSE*'
+              - 'NOTICE*'
   native:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -46,38 +89,57 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: echo 'RUSTFLAGS=-C target-feature=+crt-static' >> "$GITHUB_ENV"
-      - name: Check and test Rust
-        shell: bash
-        run: |
-          cargo fmt --all --check
-          cargo clippy --locked --all-targets --all-features -- -D warnings
-          cargo test --locked --workspace
-          cargo build --locked --workspace
+      - name: Restore Rust build cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ matrix.os }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Check Rust formatting
+        run: cargo fmt --all --check
+      - name: Lint Rust
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Test native libraries
+        run: cargo test --locked --workspace
+      - name: Build native executables
+        run: cargo build --locked --workspace
   validate:
+    needs: changes
+    if: needs.changes.outputs.browser == 'true' || needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Check documentation links
+        if: needs.changes.outputs.docs == 'true'
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          output: ${{ runner.temp }}/documentation-links.md
+          args: --offline --include-fragments=anchor-only README.md CONTRIBUTING.md docs/*.md native/*/README.md
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
-      - name: Install and validate
-        run: |
-          corepack enable
-          pnpm install --frozen-lockfile
-          pnpm lint
-          pnpm typecheck
-          pnpm test
-          pnpm build
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install browser dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint browser code and documentation
+        run: pnpm lint
+      - name: Test browser code
+        if: needs.changes.outputs.browser == 'true'
+        run: pnpm test
+      - name: Typecheck and build browser app
+        if: needs.changes.outputs.browser == 'true'
+        run: pnpm build
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: needs.changes.outputs.browser == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         with:
           path: dist
   deploy:
-    needs: validate
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [changes, validate]
+    if: needs.changes.outputs.browser == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

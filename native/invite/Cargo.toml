@@ -5,6 +5,10 @@ edition = "2024"
 rust-version = "1.92"
 license = "MIT"
 publish = false
+description = "LiveKit browser camera invite URLs and QR codes for trusted backends"
+repository = "https://github.com/Hebbian-Robotics/livekit-cameras"
+keywords = ["livekit", "camera", "qrcode", "invite", "webrtc"]
+categories = ["multimedia::video"]
 
 [dependencies]
 base64 = "0.22"

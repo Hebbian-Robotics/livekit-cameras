@@ -2,7 +2,20 @@
   "name": "@hebbian/browser-camera",
   "version": "0.1.0",
   "private": true,
-  "description": "Stream a browser camera to any LiveKit room.",
+  "description": "Open-source browser camera streaming and a multi-camera room viewer for LiveKit.",
+  "homepage": "https://hebbian-robotics.github.io/livekit-cameras/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hebbian-Robotics/livekit-cameras.git"
+  },
+  "keywords": [
+    "livekit",
+    "webrtc",
+    "camera-streaming",
+    "browser-camera",
+    "usb-camera",
+    "robotics"
+  ],
   "license": "MIT",
   "type": "module",
   "engines": {

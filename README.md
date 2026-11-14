@@ -1,6 +1,23 @@
-# LiveKit camera tools
+# LiveKit Cameras: browser streaming and Rust camera tools
 
-Stream camera video into a LiveKit room from a browser or a native publisher.
+[![CI](https://github.com/Hebbian-Robotics/livekit-cameras/actions/workflows/deploy.yml/badge.svg)](https://github.com/Hebbian-Robotics/livekit-cameras/actions/workflows/deploy.yml)
+
+Stream phone, tablet, laptop and USB webcam video into a **LiveKit room**.
+LiveKit Cameras combines an open-source browser camera publisher and room viewer
+with Rust libraries for native camera capture, WebRTC publishing, latest-frame
+snapshots and video recording. Maintained by Hebbian Robotics for robotics,
+teleoperation and other applications that need shared camera feeds.
+
+## Choose a camera tool
+
+| What you need                                                      | Tool                                                                                          |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| Use a phone, tablet or laptop as a LiveKit camera                  | [Browser camera publisher](#browser-camera), hosted on GitHub Pages                           |
+| Watch several published cameras without opening a USB device again | [LiveKit room viewer](#room-viewer)                                                           |
+| Publish a local USB camera from Rust or the command line           | [Native camera publisher](#native-camera-publisher)                                           |
+| Get the latest camera image for a model or application             | [Rust latest-frame API](native/frames/README.md)                                              |
+| Record LiveKit camera tracks as H.264 video                        | [Rust recording primitives](native/recorder/README.md)                                        |
+| Create browser invite links and QR codes on your backend           | [Rust invite API](native/invite/README.md) or [TypeScript example](examples/create-invite.ts) |
 
 ## Browser camera
 
@@ -96,7 +113,9 @@ pnpm build
 ```
 
 Serve `dist/` on any static HTTPS host. Relative asset URLs support GitHub Pages
-project paths. Camera access requires HTTPS (or localhost during development).
+project paths. For a deployment at a different public URL, update the canonical
+and social-preview URLs in `index.html`. The social preview source lives in
+`public/social-preview.svg`, with a PNG copy for sharing services. Camera access requires HTTPS (or localhost during development).
 For development on a physical phone, use an HTTPS development origin.
 
 The GitHub Actions workflow validates every push and pull request, and deploys
@@ -184,6 +203,13 @@ and camera behavior have not been validated on macOS or Windows.
 
 For an upstream comparison and additional diagnostic tools, see LiveKit's
 [local video example](https://github.com/livekit/rust-sdks/tree/main/examples/local_video).
+
+## Related MCAP recording tools
+
+[MCAP Tools](https://github.com/Hebbian-Robotics/mcap-tools) provides a Rust and
+Python writer for standard MCAP files, ROS 2/Foxglove message encodings, and
+camera video export from MCAP to MP4. Use it when building recording workflows
+that store camera video alongside telemetry.
 
 ## License
 

@@ -5,6 +5,10 @@ edition = "2024"
 rust-version = "1.92"
 license = "MIT"
 publish = false
+description = "Publish native USB camera video to LiveKit rooms from Rust or the command line"
+repository = "https://github.com/Hebbian-Robotics/livekit-cameras"
+keywords = ["livekit", "webrtc", "camera", "streaming", "robotics"]
+categories = ["multimedia::video"]
 
 [dependencies]
 cameras = { path = "../cameras" }

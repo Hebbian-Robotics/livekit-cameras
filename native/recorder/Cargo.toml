@@ -5,6 +5,10 @@ edition = "2024"
 rust-version = "1.92"
 license = "MIT"
 publish = false
+description = "Record LiveKit camera tracks as timestamped H.264 video with FFmpeg"
+repository = "https://github.com/Hebbian-Robotics/livekit-cameras"
+keywords = ["livekit", "video", "recording", "h264", "robotics"]
+categories = ["multimedia::video"]
 
 [dependencies]
 cameras = { path = "../cameras" }

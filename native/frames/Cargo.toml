@@ -5,6 +5,10 @@ edition = "2024"
 rust-version = "1.92"
 license = "MIT"
 publish = false
+description = "Latest-frame camera snapshots from native devices and LiveKit rooms"
+repository = "https://github.com/Hebbian-Robotics/livekit-cameras"
+keywords = ["livekit", "camera", "snapshot", "video", "robotics"]
+categories = ["multimedia::video"]
 
 [dependencies]
 cameras = { path = "../cameras" }

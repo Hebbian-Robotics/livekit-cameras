@@ -5,6 +5,10 @@ edition = "2024"
 rust-version = "1.92"
 license = "MIT"
 publish = false
+description = "Native USB and webcam capture for Rust camera streaming applications"
+repository = "https://github.com/Hebbian-Robotics/livekit-cameras"
+keywords = ["camera", "webcam", "video", "capture", "robotics"]
+categories = ["multimedia::video"]
 
 [dependencies]
 clap = { version = "4.6.7", features = ["derive"] }

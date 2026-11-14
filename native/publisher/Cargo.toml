@@ -13,9 +13,9 @@ categories = ["multimedia::video"]
 [dependencies]
 cameras = { path = "../cameras" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
-livekit = { version = "=0.9.7", features = ["rustls-tls-native-roots"] }
+livekit = { version = "=0.11.0", features = ["rustls-tls-native-roots"] }
 # This SDK release requires the matching signaling release.
-livekit-signaling = "=0.1.7"
+livekit-signaling = "=0.2.0"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time", "process", "io-util"] }
 tokio-util = { version = "0.7", features = ["rt"] }

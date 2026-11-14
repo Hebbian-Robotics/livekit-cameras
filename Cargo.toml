@@ -13,3 +13,12 @@ opt-level = 3
 
 [profile.dev.package.image]
 opt-level = 2
+
+[profile.dev]
+debug = "line-tables-only"
+
+# Keep unwinding for reusable libraries; optimize shipped native tools.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

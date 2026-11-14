@@ -11,7 +11,7 @@ keywords = ["livekit", "camera", "qrcode", "invite", "webrtc"]
 categories = ["multimedia::video"]
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 thiserror = "2"
 url = "2"

@@ -13,7 +13,7 @@ categories = ["multimedia::video"]
 [dependencies]
 cameras = { path = "../cameras" }
 chrono = "0.4"
-livekit = { version = "=0.9.7", features = ["rustls-tls-native-roots"] }
+livekit = { version = "=0.11.0", features = ["rustls-tls-native-roots"] }
 thiserror = "2"
 tokio = { version = "1", features = ["rt", "sync", "macros"] }
 tokio-stream = "0.1"

@@ -12,6 +12,8 @@ use tokio::{
 };
 
 const REOPEN_DELAY_CAP: Duration = Duration::from_secs(3);
+/// How often a capture process that is waiting for a frame checks that its supervisor lives.
+const SUPERVISOR_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 
 pub struct CapturedI420Frame {
     pub captured_at_unix_ns: u128,
@@ -38,6 +40,7 @@ impl CaptureWorker {
             .arg("__capture")
             .arg(camera.name())
             .arg(camera.device())
+            .arg(std::process::id().to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -137,6 +140,8 @@ async fn read_frames(
 struct CaptureArguments {
     name: String,
     device: String,
+    /// The process id of the supervisor that spawned this process.
+    supervisor: u32,
 }
 
 /// Private subprocess entry point; stdout is a binary stream, diagnostics use stderr.
@@ -145,14 +150,18 @@ struct CaptureArguments {
 /// Returns an error if initialization, capture or writing to the pipe fails.
 pub fn run_capture_process() -> Result<(), PublisherError> {
     let arguments = CaptureArguments::parse_from(std::env::args_os().skip(1));
+    let supervisor = arguments.supervisor;
     cameras::validate_camera_name(&arguments.name)?;
     cameras::initialize()?;
     let reopen_policy = ReopenPolicy::for_device(&arguments.device);
     let mut backoff = crate::backoff::Backoff::new(REOPEN_DELAY_CAP);
     let mut output = std::io::stdout().lock();
     loop {
+        if supervisor_exited(supervisor) {
+            return Ok(());
+        }
         let attempt_started = std::time::Instant::now();
-        match capture_to_pipe(&arguments.device, &mut output) {
+        match capture_to_pipe(&arguments.device, &mut output, supervisor) {
             Ok(()) => return Ok(()),
             Err(PublisherError::Io(error)) => return Err(error.into()),
             Err(error) => eprintln!("Camera {}: {error}", arguments.name),
@@ -177,7 +186,27 @@ pub fn run_capture_process() -> Result<(), PublisherError> {
     }
 }
 
-fn capture_to_pipe(device: &str, output: &mut impl Write) -> Result<(), PublisherError> {
+/// Whether the supervisor that spawned this process is gone: the process is reparented when
+/// it exits, even if that happened before this process first looked. A capture process owns a camera and is in its own process group, so it must notice
+/// this itself; a device that cannot open writes nothing, so a broken pipe never shows it.
+fn supervisor_exited(supervisor: u32) -> bool {
+    #[cfg(unix)]
+    {
+        std::os::unix::process::parent_id() != supervisor
+    }
+    // Without a portable parent query, a broken pipe is the only signal.
+    #[cfg(not(unix))]
+    {
+        let _ = supervisor;
+        false
+    }
+}
+
+fn capture_to_pipe(
+    device: &str,
+    output: &mut impl Write,
+    supervisor: u32,
+) -> Result<(), PublisherError> {
     // Drain the native backend on its own thread. Some backends queue frames
     // without a bound; conversion or a slow pipe must not build up old images.
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
@@ -198,9 +227,20 @@ fn capture_to_pipe(device: &str, output: &mut impl Write) -> Result<(), Publishe
         }
     });
     loop {
-        let raw_frame = receiver.recv().map_err(|_| {
-            PublisherError::Configuration("camera reader stopped unexpectedly".to_owned())
-        })??;
+        let raw_frame = match receiver.recv_timeout(SUPERVISOR_CHECK_INTERVAL) {
+            Ok(raw_frame) => raw_frame?,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                if supervisor_exited(supervisor) {
+                    return Ok(());
+                }
+                continue;
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(PublisherError::Configuration(
+                    "camera reader stopped unexpectedly".to_owned(),
+                ));
+            }
+        };
         let frame = raw_frame.into_video()?;
         // Same-executable private protocol: packed dimensions, Unix ns, then I420.
         output.write_all(&frame.i420.width.to_le_bytes())?;

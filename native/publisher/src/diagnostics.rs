@@ -29,77 +29,12 @@ impl PublishingDiagnostics {
             loop {
                 match track.get_stats().await {
                     Ok(statistics) => {
-                        let mut found_video = false;
-                        for statistic in &statistics {
-                            let RtcStats::OutboundRtp(outbound) = statistic else {
-                                continue;
-                            };
-                            if outbound.stream.kind != "video" {
-                                continue;
-                            }
-                            let codec = statistics
-                                .iter()
-                                .find_map(|statistic| match statistic {
-                                    RtcStats::Codec(codec)
-                                        if codec.rtc.id == outbound.stream.codec_id =>
-                                    {
-                                        Some(codec.codec.mime_type.as_str())
-                                    }
-                                    _ => None,
-                                })
-                                .unwrap_or("unavailable");
-                            // Retransmission streams do not describe the video encoder.
-                            if codec.eq_ignore_ascii_case("video/rtx") {
-                                continue;
-                            }
-                            found_video = true;
-                            let encoder = if outbound.outbound.encoder_implementation.is_empty() {
-                                "unavailable"
-                            } else {
-                                &outbound.outbound.encoder_implementation
-                            };
-                            if previous.is_none() {
-                                eprintln!(
-                                    "Camera publisher {name}: negotiated codec={codec}; encoder={encoder}"
-                                );
-                            }
-                            if let Some(age) = &reported_age {
-                                let current = EncodingSnapshot::new(outbound);
-                                if let Some(previous) = &previous {
-                                    if let Some(rates) = current.rates_since(previous) {
-                                        let age = match age.load(Ordering::Relaxed) {
-                                            u64::MAX => "unavailable".to_owned(),
-                                            microseconds => {
-                                                format!(
-                                                    "{:.2} ms",
-                                                    Duration::from_micros(microseconds)
-                                                        .as_secs_f64()
-                                                        * 1000.0
-                                                )
-                                            }
-                                        };
-                                        let encode_time = rates.encode_ms.map_or_else(
-                                            || "unavailable".to_owned(),
-                                            |milliseconds| format!("{milliseconds:.2} ms"),
-                                        );
-                                        eprintln!(
-                                            "Camera publisher {name}: codec={codec}; encoder={encoder}; encoded_fps={:.2}; sent_kbit_s={:.1}; mean_encode={encode_time}; latest_submission_age={age}",
-                                            rates.frames_per_second, rates.kilobits_per_second
-                                        );
-                                    } else {
-                                        eprintln!(
-                                            "Camera publisher {name}: publishing counters reset; collecting a new interval"
-                                        );
-                                    }
-                                }
-                                previous = Some(current);
-                            }
-                        }
-                        if !found_video {
-                            eprintln!(
-                                "Camera publisher {name}: codec and encoder statistics unavailable"
-                            );
-                        }
+                        report_statistics(
+                            &name,
+                            &statistics,
+                            reported_age.as_deref(),
+                            &mut previous,
+                        );
                     }
                     Err(error) => {
                         eprintln!(
@@ -130,6 +65,77 @@ impl PublishingDiagnostics {
             .and_then(|nanoseconds| u64::try_from(nanoseconds / 1000).ok())
             .unwrap_or(u64::MAX);
         age.store(microseconds, Ordering::Relaxed);
+    }
+}
+
+fn report_statistics(
+    name: &str,
+    statistics: &[RtcStats],
+    submission_age_us: Option<&AtomicU64>,
+    previous: &mut Option<EncodingSnapshot>,
+) {
+    let mut found_video = false;
+    for statistic in statistics {
+        let RtcStats::OutboundRtp(outbound) = statistic else {
+            continue;
+        };
+        if outbound.stream.kind != "video" {
+            continue;
+        }
+        let codec = statistics
+            .iter()
+            .find_map(|statistic| match statistic {
+                RtcStats::Codec(codec) if codec.rtc.id == outbound.stream.codec_id => {
+                    Some(codec.codec.mime_type.as_str())
+                }
+                _ => None,
+            })
+            .unwrap_or("unavailable");
+        // Retransmission streams do not describe the video encoder.
+        if codec.eq_ignore_ascii_case("video/rtx") {
+            continue;
+        }
+        found_video = true;
+        let encoder = if outbound.outbound.encoder_implementation.is_empty() {
+            "unavailable"
+        } else {
+            &outbound.outbound.encoder_implementation
+        };
+        if previous.is_none() {
+            eprintln!("Camera publisher {name}: negotiated codec={codec}; encoder={encoder}");
+        }
+        if let Some(age) = submission_age_us {
+            let current = EncodingSnapshot::new(outbound);
+            if let Some(previous) = previous.as_ref() {
+                if let Some(rates) = current.rates_since(previous) {
+                    let age = match age.load(Ordering::Relaxed) {
+                        u64::MAX => "unavailable".to_owned(),
+                        microseconds => {
+                            format!(
+                                "{:.2} ms",
+                                Duration::from_micros(microseconds).as_secs_f64() * 1000.0
+                            )
+                        }
+                    };
+                    let encode_time = rates.encode_ms.map_or_else(
+                        || "unavailable".to_owned(),
+                        |milliseconds| format!("{milliseconds:.2} ms"),
+                    );
+                    eprintln!(
+                        "Camera publisher {name}: codec={codec}; encoder={encoder}; encoded_fps={:.2}; sent_kbit_s={:.1}; mean_encode={encode_time}; latest_submission_age={age}",
+                        rates.frames_per_second, rates.kilobits_per_second
+                    );
+                } else {
+                    eprintln!(
+                        "Camera publisher {name}: publishing counters reset; collecting a new interval"
+                    );
+                }
+            }
+            *previous = Some(current);
+        }
+    }
+    if !found_video {
+        eprintln!("Camera publisher {name}: codec and encoder statistics unavailable");
     }
 }
 

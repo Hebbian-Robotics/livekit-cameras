@@ -21,7 +21,8 @@
     "rules": {
       "preset": "recommended",
       "complexity": {
-        "useLiteralKeys": "off"
+        "useLiteralKeys": "off",
+        "noExcessiveNestedTestSuites": "error"
       },
       "correctness": {
         "noUnusedVariables": "error",
@@ -29,7 +30,8 @@
         "noUnusedFunctionParameters": "error"
       },
       "suspicious": {
-        "noExplicitAny": "error"
+        "noExplicitAny": "error",
+        "noDuplicateTestHooks": "error"
       },
       "nursery": {
         "noFloatingPromises": "error",
@@ -37,6 +39,12 @@
           "level": "error",
           "options": {
             "requireExplicitCase": true
+          }
+        },
+        "noExcessiveNestedBlocks": {
+          "level": "error",
+          "options": {
+            "max": 4
           }
         }
       }

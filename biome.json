@@ -47,6 +47,10 @@
             "max": 4
           }
         }
+      },
+      "style": {
+        "noUselessElse": "error",
+        "noDoneCallback": "error"
       }
     }
   },

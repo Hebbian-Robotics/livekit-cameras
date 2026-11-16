@@ -2,9 +2,14 @@ use crate::{
     config::{CameraConfiguration, ReopenPolicy},
     error::PublisherError,
 };
-use cameras::{CameraCapture, conversion::I420Frame};
+use cameras::{CameraCapture, RawCapturedFrame, conversion::I420Frame};
 use clap::Parser;
-use std::{io::Write, process::Stdio, sync::Arc, time::Duration};
+use std::{
+    io::Write,
+    process::Stdio,
+    sync::{Arc, Condvar, Mutex},
+    time::Duration,
+};
 use tokio::{
     io::AsyncReadExt,
     process::{Child, ChildStdout, Command},
@@ -209,38 +214,53 @@ fn capture_to_pipe(
 ) -> Result<(), PublisherError> {
     // Drain the native backend on its own thread. Some backends queue frames
     // without a bound; conversion or a slow pipe must not build up old images.
-    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    let pending_capture = Arc::new(PendingCapture::<RawCapturedFrame>::default());
+    let reader_capture = Arc::downgrade(&pending_capture);
     let device = device.to_owned();
-    std::thread::spawn(move || {
+    let capture_thread = std::thread::spawn(move || {
         let capture_result: Result<(), cameras::CameraError> = (|| {
             let mut capture = CameraCapture::open(&device)?;
             loop {
                 let raw_frame = capture.read_raw_frame()?;
-                match sender.try_send(Ok(raw_frame)) {
-                    Ok(()) | Err(std::sync::mpsc::TrySendError::Full(_)) => {}
-                    Err(std::sync::mpsc::TrySendError::Disconnected(_)) => return Ok(()),
-                }
+                let Some(pending_capture) = reader_capture.upgrade() else {
+                    return Ok(());
+                };
+                pending_capture.replace(raw_frame);
             }
         })();
-        if let Err(error) = capture_result {
-            let _ = sender.send(Err(error));
+        if let Err(error) = capture_result
+            && let Some(pending_capture) = reader_capture.upgrade()
+        {
+            let mut pending_state = pending_capture.state.lock().unwrap();
+            pending_state.error = Some(error);
+            pending_capture.ready.notify_one();
         }
     });
     loop {
-        let raw_frame = match receiver.recv_timeout(SUPERVISOR_CHECK_INTERVAL) {
-            Ok(raw_frame) => raw_frame?,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                if supervisor_exited(supervisor) {
-                    return Ok(());
-                }
-                continue;
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+        let mut pending_state = pending_capture.state.lock().unwrap();
+        while pending_state.frame.is_none() && pending_state.error.is_none() {
+            let (next_state, _) = pending_capture
+                .ready
+                .wait_timeout(pending_state, SUPERVISOR_CHECK_INTERVAL)
+                .unwrap();
+            pending_state = next_state;
+            if capture_thread.is_finished()
+                && pending_state.frame.is_none()
+                && pending_state.error.is_none()
+            {
                 return Err(PublisherError::Configuration(
                     "camera reader stopped unexpectedly".to_owned(),
                 ));
             }
-        };
+            if supervisor_exited(supervisor) {
+                return Ok(());
+            }
+        }
+        if let Some(error) = pending_state.error.take() {
+            return Err(error.into());
+        }
+        let raw_frame = pending_state.frame.take().expect("capture became ready");
+        drop(pending_state);
         let frame = raw_frame.into_video()?;
         // Same-executable private protocol: packed dimensions, Unix ns, then I420.
         output.write_all(&frame.i420.width.to_le_bytes())?;
@@ -248,5 +268,52 @@ fn capture_to_pipe(
         output.write_all(&frame.captured_at_unix_ns.to_le_bytes())?;
         output.write_all(&frame.i420.data)?;
         output.flush()?;
+    }
+}
+
+/// Only the newest unconverted frame is useful to a live subscriber.
+struct PendingCapture<Frame> {
+    state: Mutex<PendingCaptureState<Frame>>,
+    ready: Condvar,
+}
+
+struct PendingCaptureState<Frame> {
+    frame: Option<Frame>,
+    error: Option<cameras::CameraError>,
+}
+
+impl<Frame> Default for PendingCapture<Frame> {
+    fn default() -> Self {
+        Self {
+            state: Mutex::new(PendingCaptureState {
+                frame: None,
+                error: None,
+            }),
+            ready: Condvar::new(),
+        }
+    }
+}
+
+impl<Frame> PendingCapture<Frame> {
+    fn replace(&self, frame: Frame) {
+        self.state.lock().unwrap().frame = Some(frame);
+        self.ready.notify_one();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PendingCapture;
+
+    #[test]
+    fn slow_conversion_resumes_with_the_newest_capture() {
+        let pending_capture = PendingCapture::default();
+        pending_capture.replace(1);
+        assert_eq!(pending_capture.state.lock().unwrap().frame.take(), Some(1));
+        // Captures continue while conversion or the output pipe is busy.
+        pending_capture.replace(2);
+        pending_capture.replace(3);
+        pending_capture.replace(4);
+        assert_eq!(pending_capture.state.lock().unwrap().frame.take(), Some(4));
     }
 }

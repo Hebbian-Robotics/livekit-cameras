@@ -17,6 +17,8 @@ struct Arguments {
     /// Camera index, device path or native identifier.
     #[arg(long)]
     device: String,
+    #[command(flatten)]
+    publishing: livekit_camera_publisher::config::PublishingOptions,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -35,7 +37,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let arguments = Arguments::parse();
-    let camera = CameraConfiguration::new(arguments.name, arguments.device)?;
+    let mut camera = CameraConfiguration::new(arguments.name, arguments.device)?;
+    camera.publishing = arguments.publishing;
     cameras::initialize()?;
     let stopped = CancellationToken::new();
     let signal_stopped = stopped.clone();

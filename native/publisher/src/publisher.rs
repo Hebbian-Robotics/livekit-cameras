@@ -1,4 +1,7 @@
-use crate::{capture::CaptureWorker, config::CameraConfiguration, error::PublisherError};
+use crate::{
+    capture::CaptureWorker, config::CameraConfiguration, diagnostics::PublishingDiagnostics,
+    error::PublisherError,
+};
 use livekit::{
     Room, RoomEvent, RoomOptions,
     options::{FrameMetadataFeatures, TrackPublishOptions, VideoEncoding},
@@ -51,20 +54,22 @@ async fn publish_connected_camera(
 ) -> Result<(), PublisherError> {
     let mut capture = CaptureWorker::start(camera)?;
     let publication_result =
-        publish_frames(camera.name(), room, events, &mut capture.frames, stopped).await;
+        publish_frames(camera, room, events, &mut capture.frames, stopped).await;
     let capture_result = capture.stop().await;
     publication_result?;
     capture_result
 }
 
 async fn publish_frames(
-    name: &str,
+    camera: &CameraConfiguration,
     room: &Room,
     events: &mut mpsc::UnboundedReceiver<RoomEvent>,
     frames: &mut watch::Receiver<Option<std::sync::Arc<crate::capture::CapturedI420Frame>>>,
     stopped: &CancellationToken,
 ) -> Result<(), PublisherError> {
+    let name = camera.name();
     let participant = room.local_participant();
+    let mut diagnostics = None;
     let mut source: Option<NativeVideoSource> = None;
     let mut next_publish_at = Instant::now();
     loop {
@@ -106,6 +111,7 @@ async fn publish_frames(
             metadata_features.user_timestamp = true;
             let options = TrackPublishOptions {
                 source: TrackSource::Camera,
+                video_codec: camera.publishing.codec.livekit_codec(),
                 simulcast: false,
                 video_encoding: Some(VideoEncoding {
                     max_framerate: f64::from(MAXIMUM_FRAMES_PER_SECOND),
@@ -116,12 +122,17 @@ async fn publish_frames(
             };
             tokio::select! {
                 () = stopped.cancelled() => return Ok(()),
-                published = participant.publish_track(LocalTrack::Video(track), options) => { published?; }
+                published = participant.publish_track(LocalTrack::Video(track.clone()), options) => { published?; }
             }
             eprintln!(
                 "Camera {name}: publishing {}x{}",
                 frame.i420.width, frame.i420.height
             );
+            diagnostics = Some(PublishingDiagnostics::start(
+                name.to_owned(),
+                track,
+                camera.publishing.diagnostics,
+            ));
             source = Some(video_source);
         }
         if let Some(video_source) = &source {
@@ -130,6 +141,9 @@ async fn publish_frames(
             };
             let video_frame = livekit_frame(&frame)?;
             let _ = video_source.capture_frame(&video_frame);
+            if let Some(diagnostics) = &diagnostics {
+                diagnostics.record_submission(frame.captured_at_unix_ns);
+            }
             // Schedule from actual submission, so slow reads/encodes never cause catch-up bursts.
             next_publish_at = Instant::now() + FRAME_INTERVAL;
         }

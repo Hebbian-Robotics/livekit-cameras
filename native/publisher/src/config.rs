@@ -4,6 +4,7 @@ use crate::error::PublisherError;
 pub struct CameraConfiguration {
     name: String,
     device: String,
+    pub publishing: PublishingOptions,
 }
 
 impl CameraConfiguration {
@@ -18,7 +19,11 @@ impl CameraConfiguration {
                 "camera device cannot be empty".into(),
             ));
         }
-        Ok(Self { name, device })
+        Ok(Self {
+            name,
+            device,
+            publishing: PublishingOptions::default(),
+        })
     }
 
     #[must_use]
@@ -72,6 +77,39 @@ mod tests {
             "0x123macos",
         ] {
             assert_eq!(ReopenPolicy::for_device(device), ReopenPolicy::Retry);
+        }
+    }
+}
+
+/// Video publishing choices shared by native integrations and the CLI.
+#[derive(Clone, Copy, Debug, Default, clap::Args)]
+pub struct PublishingOptions {
+    /// Requested video codec; the SDK falls back if unavailable.
+    #[arg(
+        long = "video-codec",
+        env = "LIVEKIT_CAMERA_CODEC",
+        value_enum,
+        default_value = "vp8"
+    )]
+    pub codec: CameraCodec,
+    /// Report publishing performance every five seconds.
+    #[arg(long = "camera-diagnostics", env = "LIVEKIT_CAMERA_DIAGNOSTICS")]
+    pub diagnostics: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, clap::ValueEnum)]
+pub enum CameraCodec {
+    #[default]
+    Vp8,
+    H264,
+}
+
+impl CameraCodec {
+    #[must_use]
+    pub fn livekit_codec(self) -> livekit::options::VideoCodec {
+        match self {
+            Self::Vp8 => livekit::options::VideoCodec::VP8,
+            Self::H264 => livekit::options::VideoCodec::H264,
         }
     }
 }

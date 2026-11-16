@@ -27,16 +27,18 @@
     "build": "tsc --noEmit && vite build && tsx scripts/write-browser-licenses.ts",
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check .",
+    "lint": "biome check --error-on-warnings .",
     "format": "biome check --write .",
     "test": "vitest run",
     "invite": "tsx examples/create-invite.ts",
     "viewer-invite": "tsx examples/create-viewer-invite.ts",
-    "check": "pnpm lint && pnpm typecheck",
-    "cargo:clippy": "cargo clippy --all-targets --all-features -- -D warnings",
+    "check": "pnpm lint && pnpm typecheck && pnpm knip",
+    "cargo:clippy": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
     "cargo:fmt": "cargo fmt --all --check",
-    "check:native": "pnpm cargo:fmt && pnpm cargo:clippy",
-    "check:all": "pnpm check && pnpm check:native"
+    "check:native": "pnpm cargo:fmt && pnpm cargo:clippy && pnpm cargo:machete",
+    "check:all": "pnpm check && pnpm check:native",
+    "knip": "knip",
+    "cargo:machete": "cargo machete --with-metadata --skip-target-dir"
   },
   "dependencies": {
     "@xstate/react": "^6.1.0",
@@ -57,6 +59,7 @@
     "tsx": "4.23.15",
     "typescript": "7.0.2",
     "vite": "^8.3.8",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "knip": "^6.45.0"
   }
 }

@@ -253,6 +253,12 @@ impl Drop for CameraCapture {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "Test assertions fail immediately on unexpected outcomes"
+)]
 mod platform_tests {
     use super::*;
 

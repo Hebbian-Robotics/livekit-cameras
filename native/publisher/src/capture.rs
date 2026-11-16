@@ -225,24 +225,29 @@ fn capture_to_pipe(
                 let Some(pending_capture) = reader_capture.upgrade() else {
                     return Ok(());
                 };
-                pending_capture.replace(raw_frame);
+                pending_capture.replace(raw_frame)?;
             }
         })();
         if let Err(error) = capture_result
             && let Some(pending_capture) = reader_capture.upgrade()
         {
-            let mut pending_state = pending_capture.state.lock().unwrap();
+            let Ok(mut pending_state) = pending_capture.state.lock() else {
+                return;
+            };
             pending_state.error = Some(error);
             pending_capture.ready.notify_one();
         }
     });
     loop {
-        let mut pending_state = pending_capture.state.lock().unwrap();
+        let mut pending_state = pending_capture
+            .state
+            .lock()
+            .map_err(|_| std::io::Error::other("camera capture state lock poisoned"))?;
         while pending_state.frame.is_none() && pending_state.error.is_none() {
             let (next_state, _) = pending_capture
                 .ready
                 .wait_timeout(pending_state, SUPERVISOR_CHECK_INTERVAL)
-                .unwrap();
+                .map_err(|_| std::io::Error::other("camera capture state lock poisoned"))?;
             pending_state = next_state;
             if capture_thread.is_finished()
                 && pending_state.frame.is_none()
@@ -259,7 +264,10 @@ fn capture_to_pipe(
         if let Some(error) = pending_state.error.take() {
             return Err(error.into());
         }
-        let raw_frame = pending_state.frame.take().expect("capture became ready");
+        let raw_frame = pending_state
+            .frame
+            .take()
+            .ok_or_else(|| std::io::Error::other("camera capture became ready without a frame"))?;
         drop(pending_state);
         let frame = raw_frame.into_video()?;
         // Same-executable private protocol: packed dimensions, Unix ns, then I420.
@@ -295,25 +303,35 @@ impl<Frame> Default for PendingCapture<Frame> {
 }
 
 impl<Frame> PendingCapture<Frame> {
-    fn replace(&self, frame: Frame) {
-        self.state.lock().unwrap().frame = Some(frame);
+    fn replace(&self, frame: Frame) -> std::io::Result<()> {
+        self.state
+            .lock()
+            .map_err(|_| std::io::Error::other("camera capture state lock poisoned"))?
+            .frame = Some(frame);
         self.ready.notify_one();
+        Ok(())
     }
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "Test assertions fail immediately on unexpected outcomes"
+)]
 mod tests {
     use super::PendingCapture;
 
     #[test]
     fn slow_conversion_resumes_with_the_newest_capture() {
         let pending_capture = PendingCapture::default();
-        pending_capture.replace(1);
+        pending_capture.replace(1).unwrap();
         assert_eq!(pending_capture.state.lock().unwrap().frame.take(), Some(1));
         // Captures continue while conversion or the output pipe is busy.
-        pending_capture.replace(2);
-        pending_capture.replace(3);
-        pending_capture.replace(4);
+        pending_capture.replace(2).unwrap();
+        pending_capture.replace(3).unwrap();
+        pending_capture.replace(4).unwrap();
         assert_eq!(pending_capture.state.lock().unwrap().frame.take(), Some(4));
     }
 }

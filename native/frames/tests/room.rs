@@ -1,3 +1,9 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "Integration test assertions fail immediately on unexpected outcomes"
+)]
 use livekit::{
     Room, RoomOptions,
     options::TrackPublishOptions,

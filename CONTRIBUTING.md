@@ -16,7 +16,7 @@ pnpm test
 pnpm build
 ```
 
-`check` runs Biome and TypeScript. `check:all` also runs native Rust checks and
+`check` runs Biome, TypeScript and Knip. `check:all` also runs native Rust checks and
 requires the native prerequisites below. The lockfile retains the configured
 three-day minimum release age; update dependencies with `pnpm update --latest`
 and review the manifest and lockfile together.
@@ -34,8 +34,10 @@ If your distribution does not provide clang 21, use LLVM's
 the `ffmpeg` command with `libx264` available.
 
 ```sh
+cargo install cargo-machete --version 0.9.2 --locked
+cargo machete --with-metadata --skip-target-dir
 cargo fmt
-CXX=clang++-21 cargo clippy --all-targets --all-features -- -D warnings
+CXX=clang++-21 cargo clippy --workspace --all-targets --all-features -- -D warnings
 CXX=clang++-21 cargo test --workspace
 ```
 

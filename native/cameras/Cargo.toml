@@ -31,3 +31,7 @@ nokhwa-bindings-windows = "=0.4.6"
 
 [lints]
 workspace = true
+
+[package.metadata.cargo-machete]
+# Pins the Windows backend used transitively by nokhwa; update platform backend pins together.
+ignored = ["nokhwa-bindings-windows"]

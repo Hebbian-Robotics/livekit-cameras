@@ -22,3 +22,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 
 [lints]
 workspace = true
+
+[package.metadata.cargo-machete]
+# Pins the signaling release required by the LiveKit SDK; it is used transitively.
+ignored = ["livekit-signaling"]

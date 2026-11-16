@@ -56,9 +56,12 @@ so contributors and portable builds can use their platform defaults.
 
 Native source, Cargo configuration, lockfiles and workflow changes run the Rust
 matrix on all three operating systems. Browser inputs run lint, tests and a
-build that includes typechecking. Documentation-only changes run link checks and
-Biome without compiling Rust or deploying the browser app. Manual workflow runs
-always run every check.
+build that includes typechecking. Documentation-only pull requests run link checks
+and Biome without compiling Rust or building the browser app. Every main-branch
+push runs browser validation and prepares a Pages deployment, including pushes
+that only change documentation or native code. This ensures a newer push replaces
+any older browser deployment it supersedes. Manual workflow runs always run every
+check.
 
 Rust dependency artifacts are cached by platform, compiler/toolchain settings,
 Cargo manifests and lockfile. Compiler variables are set before restoring the

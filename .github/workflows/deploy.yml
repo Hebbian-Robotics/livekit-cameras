@@ -21,7 +21,8 @@ jobs:
       pull-requests: read
     outputs:
       native: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.native == 'true' }}
-      browser: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.browser == 'true' }}
+      # Every main push needs a replacement artifact before older deployments can be skipped.
+      browser: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || steps.filter.outputs.browser == 'true' }}
       docs: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.docs == 'true' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6

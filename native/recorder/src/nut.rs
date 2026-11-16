@@ -221,6 +221,7 @@ pub(super) struct NutReader<R> {
     pts_shift: u32,
     last_timestamp: i64,
     time_base: (u64, u64),
+    time_base_count: u64,
     file_id_read: bool,
     started: bool,
 }
@@ -233,6 +234,7 @@ impl<R: Read> NutReader<R> {
             pts_shift: 0,
             last_timestamp: 0,
             time_base: (1, MICROSECONDS_PER_SECOND),
+            time_base_count: 1,
             file_id_read: false,
             started: false,
         }
@@ -307,6 +309,14 @@ impl<R: Read> NutReader<R> {
             .ok_or_else(|| invalid("short packet"))?;
         match startcode {
             MAIN_STARTCODE => self.read_main_header(data)?,
+            // A sync point restates the full time, which later frames' low bits are
+            // coded relative to. Skipping it misreads every frame that is further
+            // from the last one than the low bits can span.
+            SYNCPOINT_STARTCODE => {
+                let coded = Slice(data).variable()?;
+                self.last_timestamp = i64::try_from(coded / self.time_base_count.max(1))
+                    .map_err(|_| invalid("sync point timestamp"))?;
+            }
             STREAM_STARTCODE => {
                 let mut header = Slice(data);
                 header.variable()?; // stream id
@@ -337,6 +347,7 @@ impl<R: Read> NutReader<R> {
         if time_bases == 0 {
             return Err(invalid("no time base"));
         }
+        self.time_base_count = time_bases;
         for index in 0..time_bases {
             let numerator = header.variable()?;
             let denominator = header.variable()?;
@@ -595,5 +606,54 @@ mod tests {
         assert!(ffmpeg.wait().unwrap().success());
         assert_eq!(reader.time_base(), (1, 1_000_000));
         assert_eq!(timestamps, TIMESTAMPS);
+    }
+
+    #[test]
+    fn frames_further_apart_than_the_low_bits_span_keep_their_timestamps() {
+        const FRAME_INTERVAL_MICROSECONDS: i64 = 100_000;
+        const FRAMES: i64 = 100;
+        let mut ffmpeg = Command::new("ffmpeg")
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "nut",
+                "-i",
+                "pipe:0",
+            ])
+            .args(["-fps_mode", "vfr", "-enc_time_base", "1:1000000"])
+            .args([
+                "-c:v", "libx264", "-bf", "0", "-g", "30", "-f", "nut", "pipe:1",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap();
+        let mut stdin = ffmpeg.stdin.take().unwrap();
+        let writer = std::thread::spawn(move || {
+            let mut nut = NutWriter::new(WIDTH, HEIGHT);
+            for index in 0..FRAMES {
+                let value = u8::try_from(index).unwrap();
+                nut.write_frame(
+                    &mut stdin,
+                    index * FRAME_INTERVAL_MICROSECONDS,
+                    &frame(value),
+                )
+                .unwrap();
+            }
+        });
+        let mut reader = NutReader::new(ffmpeg.stdout.take().unwrap());
+        let mut timestamps = Vec::new();
+        while let Some(packet) = reader.next_packet().unwrap() {
+            timestamps.push(packet.timestamp);
+        }
+        writer.join().unwrap();
+        assert!(ffmpeg.wait().unwrap().success());
+        let expected: Vec<i64> = (0..FRAMES)
+            .map(|index| index * FRAME_INTERVAL_MICROSECONDS)
+            .collect();
+        assert_eq!(timestamps, expected);
     }
 }

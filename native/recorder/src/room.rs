@@ -12,12 +12,61 @@ use std::{collections::HashMap, sync::Arc};
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 
-fn frame_time(user_timestamp: Option<u64>, arrival_ns: u64) -> Result<u64, RecorderError> {
+/// A frame's time and whether the publisher supplied it.
+struct FrameTime {
+    nanoseconds: u64,
+    publisher_stamped: bool,
+}
+
+fn frame_time(user_timestamp: Option<u64>, arrival_ns: u64) -> Result<FrameTime, RecorderError> {
     match user_timestamp.filter(|timestamp| *timestamp != 0) {
-        Some(timestamp) => timestamp.checked_mul(1000).ok_or_else(|| {
-            RecorderError::InvalidData("publisher timestamp exceeds nanosecond range".into())
+        Some(timestamp) => Ok(FrameTime {
+            nanoseconds: timestamp.checked_mul(1000).ok_or_else(|| {
+                RecorderError::InvalidData("publisher timestamp exceeds nanosecond range".into())
+            })?,
+            publisher_stamped: true,
         }),
-        None => Ok(arrival_ns),
+        None => Ok(FrameTime {
+            nanoseconds: arrival_ns,
+            publisher_stamped: false,
+        }),
+    }
+}
+
+/// Counts where a camera's frame times came from, to expose silent arrival-time fallback.
+#[derive(Default)]
+struct TimestampAudit {
+    publisher_stamped: u64,
+    arrival_stamped: u64,
+    maximum_latency_nanoseconds: Option<i64>,
+}
+
+impl TimestampAudit {
+    fn record(&mut self, frame_time: &FrameTime, arrival_ns: u64) {
+        if frame_time.publisher_stamped {
+            self.publisher_stamped += 1;
+            let latency = i128::from(arrival_ns) - i128::from(frame_time.nanoseconds);
+            let latency = i64::try_from(latency).unwrap_or(i64::MAX);
+            self.maximum_latency_nanoseconds = Some(
+                self.maximum_latency_nanoseconds
+                    .map_or(latency, |m| m.max(latency)),
+            );
+        } else {
+            if self.arrival_stamped == 0 {
+                eprintln!("A frame had no publisher timestamp; stamping it on arrival");
+            }
+            self.arrival_stamped += 1;
+        }
+    }
+
+    fn report(&self, camera: &str, archive: &dyn VideoOutput) -> Result<(), RecorderError> {
+        archive.event(VideoEvent::TimestampSources {
+            camera,
+            publisher_stamped: self.publisher_stamped,
+            arrival_stamped: self.arrival_stamped,
+            maximum_latency_nanoseconds: self.maximum_latency_nanoseconds.unwrap_or(0),
+            timestamp: unix_nanoseconds(),
+        })
     }
 }
 
@@ -133,22 +182,26 @@ async fn record_camera(
     stopped: CancellationToken,
 ) -> Result<(), RecorderError> {
     let mut stream = NativeVideoStream::new(track.rtc_track()); // SDK bounded queue: newest frame only.
-    let mut writer = CameraWriter::new(camera, hardware, archive)?;
+    let mut writer = CameraWriter::new(camera.clone(), hardware, archive.clone())?;
+    let mut audit = TimestampAudit::default();
     let result = loop {
         let frame = tokio::select! {
             () = stopped.cancelled() => break Ok(()),
             frame = stream.next() => match frame { Some(frame) => frame, None => break Ok(()) },
         };
-        let timestamp = match frame_time(
+        let arrival = unix_nanoseconds();
+        let frame_time = match frame_time(
             frame
                 .frame_metadata
                 .as_ref()
                 .and_then(|metadata| metadata.user_timestamp),
-            unix_nanoseconds(),
+            arrival,
         ) {
-            Ok(timestamp) => timestamp,
+            Ok(frame_time) => frame_time,
             Err(error) => break Err(error),
         };
+        audit.record(&frame_time, arrival);
+        let timestamp = frame_time.nanoseconds;
         let result = tokio::task::spawn_blocking(move || {
             let result =
                 pack_i420(&frame).and_then(|i420| writer.write(&i420, frame.rotation, timestamp));
@@ -162,8 +215,10 @@ async fn record_camera(
     };
     stream.close();
     let finish_result = tokio::task::spawn_blocking(move || writer.finish()).await?;
+    let audit_result = audit.report(&camera, archive.as_ref());
     result?;
-    finish_result
+    finish_result?;
+    audit_result
 }
 
 fn pack_i420(frame: &BoxVideoFrame) -> Result<I420Frame, RecorderError> {
@@ -205,15 +260,29 @@ fn pack_i420(frame: &BoxVideoFrame) -> Result<I420Frame, RecorderError> {
 
 #[cfg(test)]
 mod tests {
-    use super::frame_time;
+    use super::{TimestampAudit, frame_time};
+
+    #[test]
+    fn audit_separates_publisher_and_arrival_stamped_frames() {
+        let mut audit = TimestampAudit::default();
+        let stamped = frame_time(Some(1_000), 5_000_000).unwrap();
+        audit.record(&stamped, 5_000_000);
+        audit.record(&frame_time(Some(2_000), 3_000_000).unwrap(), 3_000_000);
+        audit.record(&frame_time(None, 9).unwrap(), 9);
+        assert_eq!(audit.publisher_stamped, 2);
+        assert_eq!(audit.arrival_stamped, 1);
+        assert_eq!(audit.maximum_latency_nanoseconds, Some(4_000_000));
+    }
 
     #[test]
     fn uses_nonzero_publisher_timestamp_or_arrival_time() {
-        assert_eq!(
-            frame_time(Some(1_700_000_000_123_456), 42).unwrap(),
-            1_700_000_000_123_456_000
-        );
-        assert_eq!(frame_time(None, 42).unwrap(), 42);
-        assert_eq!(frame_time(Some(0), 42).unwrap(), 42);
+        let publisher = frame_time(Some(1_700_000_000_123_456), 42).unwrap();
+        assert_eq!(publisher.nanoseconds, 1_700_000_000_123_456_000);
+        assert!(publisher.publisher_stamped);
+        for missing in [None, Some(0)] {
+            let arrival = frame_time(missing, 42).unwrap();
+            assert_eq!(arrival.nanoseconds, 42);
+            assert!(!arrival.publisher_stamped);
+        }
     }
 }

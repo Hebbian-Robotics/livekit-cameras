@@ -32,6 +32,18 @@ pub enum VideoEvent<'a> {
         encoded: u64,
         timestamp: u64,
     },
+    /// Where a camera's frame times came from. Frames stamped on arrival instead of
+    /// by the publisher bunch together after any delivery stall, so playback shows
+    /// bursts and freezes.
+    TimestampSources {
+        camera: &'a str,
+        publisher_stamped: u64,
+        arrival_stamped: u64,
+        /// Largest arrival time minus publisher time, which includes any clock offset
+        /// between the machines.
+        maximum_latency_nanoseconds: i64,
+        timestamp: u64,
+    },
 }
 
 pub trait VideoOutput: Send + Sync {

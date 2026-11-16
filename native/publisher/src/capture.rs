@@ -157,6 +157,8 @@ pub fn run_capture_process() -> Result<(), PublisherError> {
     let arguments = CaptureArguments::parse_from(std::env::args_os().skip(1));
     let supervisor = arguments.supervisor;
     cameras::validate_camera_name(&arguments.name)?;
+    #[cfg(unix)]
+    watch_supervisor(supervisor)?;
     cameras::initialize()?;
     let reopen_policy = ReopenPolicy::for_device(&arguments.device);
     let mut backoff = crate::backoff::Backoff::new(REOPEN_DELAY_CAP);
@@ -189,6 +191,25 @@ pub fn run_capture_process() -> Result<(), PublisherError> {
             }
         }
     }
+}
+
+/// Native initialization, device reads and pipe writes can block indefinitely.
+/// The private capture subprocess must still release its resources when orphaned.
+#[cfg(unix)]
+fn watch_supervisor(supervisor: u32) -> std::io::Result<()> {
+    std::thread::Builder::new()
+        .name("capture-supervisor".to_owned())
+        .spawn(move || {
+            loop {
+                if supervisor_exited(supervisor) {
+                    // WHY: Only this isolated subprocess owns the camera. Process exit closes
+                    // its native handles even when another thread cannot unwind a blocked call.
+                    std::process::exit(0);
+                }
+                std::thread::sleep(SUPERVISOR_CHECK_INTERVAL);
+            }
+        })?;
+    Ok(())
 }
 
 /// Whether the supervisor that spawned this process is gone: the process is reparented when

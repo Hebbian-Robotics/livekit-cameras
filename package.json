@@ -35,10 +35,11 @@
     "check": "pnpm lint && pnpm typecheck && pnpm knip",
     "cargo:clippy": "cargo clippy --workspace --all-targets --all-features -- -D warnings",
     "cargo:fmt": "cargo fmt --all --check",
-    "check:native": "pnpm cargo:fmt && pnpm cargo:clippy && pnpm cargo:machete",
+    "check:native": "pnpm cargo:fmt && pnpm cargo:clippy && pnpm cargo:machete && pnpm check:architecture",
     "check:all": "pnpm check && pnpm check:native",
     "knip": "knip",
-    "cargo:machete": "cargo machete --with-metadata --skip-target-dir"
+    "cargo:machete": "cargo machete --with-metadata --skip-target-dir",
+    "check:architecture": "cargo deny --manifest-path native/cameras/Cargo.toml --config native/cameras/deny.toml --all-features --exclude-dev --locked check bans && cargo deny --manifest-path native/invite/Cargo.toml --config native/invite/deny.toml --all-features --exclude-dev --locked check bans"
   },
   "dependencies": {
     "@xstate/react": "^6.1.0",

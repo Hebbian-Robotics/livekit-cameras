@@ -67,5 +67,68 @@
         "organizeImports": "on"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["src/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": [
+                      "node:*",
+                      "livekit-server-sdk",
+                      "**/examples/**",
+                      "**/scripts/**"
+                    ],
+                    "message": "Token issuance and server operations belong in backend examples, outside the browser application."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "src/phone-orientation.ts",
+        "src/livekit-url.ts",
+        "src/errors.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["**"],
+                    "message": "These transformations accept data and must not import live adapters."
+                  }
+                ]
+              }
+            },
+            "noRestrictedGlobals": {
+              "level": "error",
+              "options": {
+                "deniedGlobals": {
+                  "fetch": "Keep network operations in adapters.",
+                  "WebSocket": "Keep live connections in adapters.",
+                  "navigator": "Pass device observations into transformations.",
+                  "document": "Keep DOM operations in the UI.",
+                  "window": "Pass browser observations into transformations."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

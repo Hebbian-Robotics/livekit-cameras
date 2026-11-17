@@ -1,0 +1,4 @@
+[bans]
+multiple-versions = "allow"
+wildcards = "allow"
+deny = ["cameras", "nokhwa", "livekit", "livekit-api", "livekit-signaling", "libwebrtc", "webrtc-sys", "livekit-camera-publisher", "livekit-camera-recorder", "livekit-camera-frames"]

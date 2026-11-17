@@ -35,7 +35,10 @@ the `ffmpeg` command with `libx264` available.
 
 ```sh
 cargo install cargo-machete --version 0.9.2 --locked
+cargo install cargo-deny --version 0.20.2 --locked
 cargo machete --with-metadata --skip-target-dir
+cargo deny --manifest-path native/cameras/Cargo.toml --config native/cameras/deny.toml --all-features --exclude-dev --locked check bans
+cargo deny --manifest-path native/invite/Cargo.toml --config native/invite/deny.toml --all-features --exclude-dev --locked check bans
 cargo fmt
 CXX=clang++-21 cargo clippy --workspace --all-targets --all-features -- -D warnings
 CXX=clang++-21 cargo test --workspace

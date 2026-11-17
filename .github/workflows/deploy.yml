@@ -105,6 +105,12 @@ jobs:
         run: |
           cargo install cargo-machete --version 0.9.2 --locked
           cargo machete --with-metadata --skip-target-dir
+      - name: Check native architecture
+        if: runner.os == 'Linux'
+        run: |
+          cargo install cargo-deny --version 0.20.2 --locked
+          cargo deny --manifest-path native/cameras/Cargo.toml --config native/cameras/deny.toml --all-features --exclude-dev --locked check bans
+          cargo deny --manifest-path native/invite/Cargo.toml --config native/invite/deny.toml --all-features --exclude-dev --locked check bans
       - name: Test native libraries
         run: cargo test --locked --workspace
       - name: Build native executables

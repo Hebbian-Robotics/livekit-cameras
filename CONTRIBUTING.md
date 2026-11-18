@@ -16,7 +16,7 @@ pnpm test
 pnpm build
 ```
 
-`check` runs Biome, TypeScript and Knip. `check:all` also runs native Rust checks and
+`check` runs Biome, Oxc's `tsrs` type checker and Knip. `check:all` also runs native Rust checks and
 requires the native prerequisites below. The lockfile retains the configured
 three-day minimum release age; update dependencies with `pnpm update --latest`
 and review the manifest and lockfile together.

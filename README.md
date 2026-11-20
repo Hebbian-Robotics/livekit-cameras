@@ -62,8 +62,8 @@ token handling and recording indicator.
 
 Select **Room viewer** and provide a URL and subscribe-enabled token. It watches
 existing tracks, including cameras that join later, without opening a camera or
-playing audio. Switching tabs keeps an active browser publication running.
-A publishing invite cannot subscribe to the room.
+playing audio. Switching between Stream and Room viewer keeps an active browser
+publication running. A publishing invite cannot subscribe to the room.
 
 With the same server credentials and room configured above, run:
 

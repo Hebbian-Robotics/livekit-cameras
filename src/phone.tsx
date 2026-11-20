@@ -11,6 +11,24 @@ import {
   VideoPresets,
 } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+  FieldTitle,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Slider } from "@/components/ui/slider";
+import { Toggle } from "@/components/ui/toggle";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { errorMessage } from "./errors.js";
 import { liveKitServerUrl } from "./livekit-url.js";
 import { phoneCameraMachine } from "./phone-camera-machine.js";
@@ -353,20 +371,20 @@ export function PhoneCamera() {
     }
   }
 
-  async function switchLens(lens: Lens): Promise<void> {
+  async function switchLens(deviceId: string): Promise<void> {
     const current = session.current;
     if (!current || roomIsRecording(current.room)) return;
     try {
       await current.track.restartTrack({
         ...captureOptions(),
-        deviceId: { exact: lens.deviceId },
+        deviceId: { exact: deviceId },
       });
       if (session.current !== current) {
         current.track.stop();
         return;
       }
       await current.refreshOutput();
-      rememberLens(lens.deviceId);
+      rememberLens(deviceId);
     } catch (error: unknown) {
       setStatus(
         `Could not switch lens: ${errorMessage(error, "unknown error")}`,
@@ -413,16 +431,11 @@ export function PhoneCamera() {
   }, [closeSession, keepScreenAwake, stop]);
 
   return (
-    <main className="phone-camera">
+    <section className="phone-camera">
       <header className="phone-header">
-        <div className="phone-branding">
-          <img className="phone-logo" src="./hebbian-logo.svg" alt="" />
-          <div>
-            <p className="phone-brand">Hebbian Robotics</p>
-            <h1>Browser camera</h1>
-          </div>
-        </div>
-        <span
+        <h1>Browser camera</h1>
+        <Badge
+          variant="secondary"
           className={`connection-badge ${cameraState === "streaming" ? "is-live" : ""}`}
         >
           {cameraState === "streaming"
@@ -430,7 +443,7 @@ export function PhoneCamera() {
             : cameraState === "starting"
               ? "Connecting"
               : "Offline"}
-        </span>
+        </Badge>
       </header>
       <p className="phone-intro">
         Place your device where you need a camera. Keep this page open while
@@ -459,22 +472,35 @@ export function PhoneCamera() {
             }
           }}
         >
-          <label>
-            LiveKit server URL
-            <input
-              name="serverUrl"
-              type="url"
-              placeholder="wss://your-project.livekit.cloud"
-              required
-            />
-          </label>
-          <label>
-            Publishing token
-            <input name="token" type="password" autoComplete="off" required />
-          </label>
-          <button type="submit" className="stream-button">
+          <FieldGroup className="[&_input]:min-h-11">
+            <Field>
+              <FieldLabel htmlFor="publisher-server-url">
+                LiveKit server URL
+              </FieldLabel>
+              <Input
+                id="publisher-server-url"
+                name="serverUrl"
+                type="url"
+                placeholder="wss://your-project.livekit.cloud"
+                required
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="publisher-token">
+                Publishing token
+              </FieldLabel>
+              <Input
+                id="publisher-token"
+                name="token"
+                type="password"
+                autoComplete="off"
+                required
+              />
+            </Field>
+          </FieldGroup>
+          <Button type="submit" className="stream-button">
             Use connection
-          </button>
+          </Button>
         </form>
       )}
       {invite && <p className="camera-name">Camera: {invite.cameraName}</p>}
@@ -491,91 +517,103 @@ export function PhoneCamera() {
         {cameraState !== "streaming" && (
           <p className="preview-placeholder">Camera preview</p>
         )}
-        {recording && <span className="recording-marker">Recording</span>}
+        {recording && <Badge className="recording-marker">Recording</Badge>}
       </div>
-      <fieldset className="lenses">
-        <legend>Video orientation</legend>
-        {(["portrait", "landscape"] as const).map((option) => (
-          <button
-            key={option}
-            type="button"
+      <FieldSet className="gap-2">
+        <FieldLegend variant="label" id="video-orientation-label">
+          Video orientation
+        </FieldLegend>
+        <div className="camera-toggles flex flex-wrap gap-2">
+          <ToggleGroup<CameraOrientation>
+            aria-labelledby="video-orientation-label"
+            className="flex-[2]"
+            variant="outline"
+            value={[orientation]}
             disabled={recording}
-            aria-pressed={orientation === option}
-            onClick={() => {
-              orientationRef.current = option;
-              setOrientation(option);
+            onValueChange={([selectedOrientation]) => {
+              if (!selectedOrientation) return;
+              orientationRef.current = selectedOrientation;
+              setOrientation(selectedOrientation);
             }}
           >
-            {option === "portrait" ? "Portrait" : "Landscape"}
-          </button>
-        ))}
-        <button
-          type="button"
-          disabled={recording}
-          aria-pressed={flipped}
-          onClick={() => {
-            flippedRef.current = !flippedRef.current;
-            setFlipped(flippedRef.current);
-          }}
-        >
-          Flip 180°
-        </button>
-      </fieldset>
+            <ToggleGroupItem value="portrait">Portrait</ToggleGroupItem>
+            <ToggleGroupItem value="landscape">Landscape</ToggleGroupItem>
+          </ToggleGroup>
+          <Toggle
+            disabled={recording}
+            variant="outline"
+            pressed={flipped}
+            onPressedChange={(pressed) => {
+              flippedRef.current = pressed;
+              setFlipped(pressed);
+            }}
+          >
+            Flip 180°
+          </Toggle>
+        </div>
+      </FieldSet>
       {cameras.length > 1 && (
-        <label className="camera-select">
-          Camera
-          <select
+        <Field data-disabled={recording || undefined}>
+          <FieldLabel htmlFor="camera-device">Camera</FieldLabel>
+          <NativeSelect
+            id="camera-device"
+            className="[&_select]:min-h-11"
             value={activeLens ?? ""}
             disabled={recording}
             onChange={(event) => {
-              const camera = cameras.find(
-                (item) => item.deviceId === event.currentTarget.value,
-              );
-              if (camera) void switchLens(camera);
+              const selectedDeviceId = event.currentTarget.value;
+              if (selectedDeviceId) void switchLens(selectedDeviceId);
             }}
           >
-            <option value="" disabled>
+            <NativeSelectOption value="" disabled>
               Select a camera
-            </option>
+            </NativeSelectOption>
             {cameras.map((camera) => (
-              <option key={camera.deviceId} value={camera.deviceId}>
+              <NativeSelectOption key={camera.deviceId} value={camera.deviceId}>
                 {camera.name}
-              </option>
+              </NativeSelectOption>
             ))}
-          </select>
-        </label>
+          </NativeSelect>
+        </Field>
       )}
       {lenses.length > 1 && (
-        <fieldset className="lenses">
-          <legend>Lens</legend>
-          {lenses.map((lens) => (
-            <button
-              key={lens.deviceId}
-              type="button"
-              disabled={recording}
-              aria-pressed={lens.deviceId === activeLens}
-              onClick={() => void switchLens(lens)}
-            >
-              {lens.name}
-            </button>
-          ))}
-        </fieldset>
+        <FieldSet className="gap-2">
+          <FieldLegend variant="label" id="camera-lens-label">
+            Lens
+          </FieldLegend>
+          <ToggleGroup
+            aria-labelledby="camera-lens-label"
+            className="camera-toggles w-full flex-wrap"
+            variant="outline"
+            value={activeLens ? [activeLens] : []}
+            disabled={recording}
+            onValueChange={([deviceId]) => {
+              if (deviceId) void switchLens(deviceId);
+            }}
+          >
+            {lenses.map((lens) => (
+              <ToggleGroupItem key={lens.deviceId} value={lens.deviceId}>
+                {lens.name}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </FieldSet>
       )}
       {zoom && (
-        <label className="zoom">
-          Zoom{" "}
-          <input
-            type="range"
+        <Field orientation="horizontal">
+          <FieldTitle id="camera-zoom-label">Zoom</FieldTitle>
+          <Slider
+            aria-labelledby="camera-zoom-label"
+            className="min-w-0 flex-1"
             min={zoom.range.min}
             max={zoom.range.max}
             step={zoom.range.step}
+            largeStep={zoom.range.step * 10}
             value={zoom.value}
             disabled={recording}
-            onChange={(event) =>
-              void changeZoom(Number(event.currentTarget.value))
-            }
+            onValueChange={(value) => void changeZoom(value)}
           />
-        </label>
+        </Field>
       )}
       {recording && (
         <p className="lock-note">
@@ -585,8 +623,9 @@ export function PhoneCamera() {
       <p className="phone-status" role="status">
         {status}
       </p>
-      <button
-        className={`stream-button ${cameraState === "streaming" ? "is-stop" : ""}`}
+      <Button
+        className="stream-button"
+        variant={cameraState === "streaming" ? "destructive" : "default"}
         type="button"
         disabled={!invite || cameraState === "starting"}
         onClick={() =>
@@ -600,26 +639,7 @@ export function PhoneCamera() {
           : cameraState === "starting"
             ? "Connecting…"
             : "Start streaming"}
-      </button>
-      <footer className="phone-footer">
-        <a
-          href="https://github.com/Hebbian-Robotics/livekit-cameras"
-          aria-label="View the source code on GitHub"
-        >
-          <span className="visually-hidden">
-            View the source code on GitHub
-          </span>
-          <svg
-            viewBox="0 0 98 96"
-            width="24"
-            height="24"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path d="M41.4395 69.3848C28.8066 67.8535 19.9062 58.7617 19.9062 46.9902C19.9062 42.2051 21.6289 37.0371 24.5 33.5918C23.2559 30.4336 23.4473 23.7344 24.8828 20.959C28.7109 20.4805 33.8789 22.4902 36.9414 25.2656C40.5781 24.1172 44.4062 23.543 49.0957 23.543C53.7852 23.543 57.6133 24.1172 61.0586 25.1699C64.0254 22.4902 69.2891 20.4805 73.1172 20.959C74.457 23.543 74.6484 30.2422 73.4043 33.4961C76.4668 37.1328 78.0937 42.0137 78.0937 46.9902C78.0937 58.7617 69.1934 67.6621 56.3691 69.2891C59.623 71.3945 61.8242 75.9883 61.8242 81.252L61.8242 91.2051C61.8242 94.0762 64.2168 95.7031 67.0879 94.5547C84.4102 87.9512 98 70.6289 98 49.1914C98 22.1074 75.9883 6.69539e-07 48.9043 4.309e-07C21.8203 1.92261e-07 -1.9479e-07 22.1074 -4.3343e-07 49.1914C-6.20631e-07 70.4375 13.4941 88.0469 31.6777 94.6504C34.2617 95.6074 36.75 93.8848 36.75 91.3008L36.75 83.6445C35.4102 84.2188 33.6875 84.6016 32.1562 84.6016C25.8398 84.6016 22.1074 81.1563 19.4277 74.7441C18.375 72.1602 17.2266 70.6289 15.0254 70.3418C13.877 70.2461 13.4941 69.7676 13.4941 69.1934C13.4941 68.0449 15.4082 67.1836 17.3223 67.1836C20.0977 67.1836 22.4902 68.9063 24.9785 72.4473C26.8926 75.2227 28.9023 76.4668 31.2949 76.4668C33.6875 76.4668 35.2187 75.6055 37.4199 73.4043C39.0469 71.7773 40.291 70.3418 41.4395 69.3848Z" />
-          </svg>
-        </a>
-      </footer>
-    </main>
+      </Button>
+    </section>
   );
 }

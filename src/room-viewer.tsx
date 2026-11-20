@@ -1,5 +1,15 @@
 import { RemoteVideoTrack, Room, RoomEvent, Track } from "livekit-client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { errorMessage } from "./errors.js";
 import { liveKitServerUrl } from "./livekit-url.js";
 
@@ -22,7 +32,7 @@ function VideoTile({ feed }: { feed: VideoFeed }) {
     };
   }, [feed.track]);
   return (
-    <article className="feed-tile">
+    <Card render={<article />} size="sm" className="feed-tile pt-0">
       <video
         ref={element}
         autoPlay
@@ -30,11 +40,11 @@ function VideoTile({ feed }: { feed: VideoFeed }) {
         playsInline
         aria-label={`${feed.participant}: ${feed.name}`}
       />
-      <div>
-        <strong>{feed.participant}</strong>
-        <span>{feed.name}</span>
-      </div>
-    </article>
+      <CardHeader className="wrap-anywhere">
+        <CardTitle>{feed.participant}</CardTitle>
+        <CardDescription>{feed.name}</CardDescription>
+      </CardHeader>
+    </Card>
   );
 }
 
@@ -164,16 +174,13 @@ export function RoomViewer() {
   const connected =
     viewerState === "connected" || viewerState === "reconnecting";
   return (
-    <main className="phone-camera viewer-page">
+    <section className="phone-camera viewer-page">
       <header className="phone-header">
-        <div className="phone-branding">
-          <img className="phone-logo" src="./hebbian-logo.svg" alt="" />
-          <div>
-            <p className="phone-brand">Hebbian Robotics</p>
-            <h1>Room cameras</h1>
-          </div>
-        </div>
-        <span className={`connection-badge ${connected ? "is-live" : ""}`}>
+        <h1>Room cameras</h1>
+        <Badge
+          variant="secondary"
+          className={`connection-badge ${connected ? "is-live" : ""}`}
+        >
           {viewerState === "reconnecting"
             ? "Reconnecting"
             : connected
@@ -181,7 +188,7 @@ export function RoomViewer() {
               : viewerState === "connecting"
                 ? "Connecting"
                 : "Offline"}
-        </span>
+        </Badge>
       </header>
       <p className="phone-intro">
         Watch video tracks in a LiveKit room. Use a token with permission to
@@ -195,33 +202,39 @@ export function RoomViewer() {
             void connect();
           }}
         >
-          <label>
-            LiveKit server URL
-            <input
-              type="url"
-              value={serverUrl}
-              onChange={(event) => setServerUrl(event.currentTarget.value)}
-              placeholder="wss://your-project.livekit.cloud"
-              required
-            />
-          </label>
-          <label>
-            Viewer token
-            <input
-              type="password"
-              value={token}
-              onChange={(event) => setToken(event.currentTarget.value)}
-              autoComplete="off"
-              required
-            />
-          </label>
-          <button
+          <FieldGroup className="[&_input]:min-h-11">
+            <Field>
+              <FieldLabel htmlFor="viewer-server-url">
+                LiveKit server URL
+              </FieldLabel>
+              <Input
+                id="viewer-server-url"
+                type="url"
+                value={serverUrl}
+                onChange={(event) => setServerUrl(event.currentTarget.value)}
+                placeholder="wss://your-project.livekit.cloud"
+                required
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="viewer-token">Viewer token</FieldLabel>
+              <Input
+                id="viewer-token"
+                type="password"
+                value={token}
+                onChange={(event) => setToken(event.currentTarget.value)}
+                autoComplete="off"
+                required
+              />
+            </Field>
+          </FieldGroup>
+          <Button
             className="stream-button"
             type="submit"
             disabled={viewerState === "connecting"}
           >
             {viewerState === "connecting" ? "Connecting…" : "Join room"}
-          </button>
+          </Button>
         </form>
       )}
       {connected && (
@@ -231,8 +244,9 @@ export function RoomViewer() {
               <VideoTile key={feed.id} feed={feed} />
             ))}
           </div>
-          <button
-            className="stream-button is-stop"
+          <Button
+            className="stream-button"
+            variant="destructive"
             type="button"
             onClick={() => {
               disconnect();
@@ -240,7 +254,7 @@ export function RoomViewer() {
             }}
           >
             Leave room
-          </button>
+          </Button>
         </>
       )}
       <p className="phone-status" role="status">
@@ -248,6 +262,6 @@ export function RoomViewer() {
           ? `Viewing ${feeds.length} ${feeds.length === 1 ? "video feed" : "video feeds"}.`
           : status}
       </p>
-    </main>
+    </section>
   );
 }

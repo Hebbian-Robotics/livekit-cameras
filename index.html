@@ -1,9 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme-storage-key="livekit-cameras-theme">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:* http://[::1]:* ws://[::1]:*; img-src 'self'; media-src 'self' blob: mediastream:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:* http://[::1]:* ws://[::1]:*; img-src 'self'; media-src 'self' blob: mediastream:; style-src 'self' 'unsafe-inline'; script-src 'self' 'sha256-bEobXWjRRpReEW8xZa2XVSKXsVp1arVRlIHK2n6guN8='">
+    <meta name="color-scheme" content="light dark">
+    <!-- The script-src hash covers the exact bytes of the theme bootstrap. -->
+    <script>
+      try {
+        const storedTheme = localStorage.getItem(document.documentElement.dataset.themeStorageKey);
+        if (storedTheme === "light" || storedTheme === "dark") {
+          document.documentElement.dataset.theme = storedTheme;
+        }
+      } catch {
+        // Follow the system preference when storage is unavailable.
+      }
+    </script>
     <meta name="referrer" content="no-referrer">
     <title>LiveKit Cameras — Browser Camera Streaming &amp; Room Viewer</title>
     <meta name="description" content="Stream a phone, tablet or laptop camera to a LiveKit room from your browser. Watch multiple camera feeds with the free, open-source room viewer by Hebbian Robotics.">

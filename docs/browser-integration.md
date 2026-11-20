@@ -36,7 +36,7 @@ Other metadata fields are ignored.
   The app includes no analytics, third-party runtime scripts or microphone capture.
 - The hosting operator's JavaScript can read the token. Trust the host or deploy
   your own copy. Video goes through the configured LiveKit service.
-- Local device selection is part of the Stream tab. A camera used exclusively by
+- Local device selection is part of the Stream view. A camera used exclusively by
   another application cannot be inspected through Room viewer until it publishes
   to LiveKit; opening that device again in a browser may conflict with capture.
 - Keep mobile devices unlocked and the page visible; background capture can be

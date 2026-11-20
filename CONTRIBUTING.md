@@ -21,6 +21,10 @@ requires the native prerequisites below. The lockfile retains the configured
 three-day minimum release age; update dependencies with `pnpm update --latest`
 and review the manifest and lockfile together.
 
+The camera UI uses shadcn/ui with Base UI and Tailwind CSS. Components live in
+`src/components/ui` and theme tokens live in `src/theme.css`. Use
+`pnpm exec shadcn add <component> --dry-run` to review generated changes before applying them.
+
 ## Native Rust
 
 Install Rust 1.92+. Linux builds need GLib/libclang headers and clang 21 or newer:

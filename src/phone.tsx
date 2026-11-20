@@ -10,9 +10,21 @@ import {
   type VideoCaptureOptions,
   VideoPresets,
 } from "livekit-client";
+import {
+  RectangleHorizontalIcon,
+  RectangleVerticalIcon,
+  RotateCwIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuIconTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from "@/components/ui/dropdown-menu";
 import {
   Field,
   FieldGroup,
@@ -29,6 +41,11 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { errorMessage } from "./errors.js";
 import { liveKitServerUrl } from "./livekit-url.js";
 import { phoneCameraMachine } from "./phone-camera-machine.js";
@@ -50,6 +67,14 @@ import "./phone.css";
 
 const PHONE_CAMERA_FRAME_RATE = 15;
 const CHOSEN_LENS_KEY = "phone-camera-lens";
+
+const orientationOptions = {
+  portrait: { label: "Portrait", Icon: RectangleVerticalIcon },
+  landscape: { label: "Landscape", Icon: RectangleHorizontalIcon },
+} satisfies Record<
+  CameraOrientation,
+  { label: string; Icon: typeof RectangleVerticalIcon }
+>;
 
 type Invite = { serverUrl: string; token: string; cameraName: string };
 type CameraSession = {
@@ -204,6 +229,7 @@ export function PhoneCamera() {
   const [recording, setRecording] = useState(false);
   const [orientation, setOrientation] =
     useState<CameraOrientation>("landscape");
+  const [orientationMenuOpen, setOrientationMenuOpen] = useState(false);
   const orientationRef = useRef<CameraOrientation>("landscape");
   const [flipped, setFlipped] = useState(false);
   const flippedRef = useRef(false);
@@ -257,6 +283,12 @@ export function PhoneCamera() {
     setCameras([]);
     setZoom(null);
   }, [sendCameraEvent]);
+
+  function updateRecordingState(room: Room): void {
+    const roomRecording = roomIsRecording(room);
+    setRecording(roomRecording);
+    if (roomRecording) setOrientationMenuOpen(false);
+  }
 
   async function updateCameraControls(track: LocalVideoTrack): Promise<void> {
     const [available, devices] = await Promise.all([
@@ -313,9 +345,7 @@ export function PhoneCamera() {
         .on(RoomEvent.Reconnected, () =>
           setStatus("Live: publishing camera video to the room."),
         )
-        .on(RoomEvent.RoomMetadataChanged, () =>
-          setRecording(roomIsRecording(room)),
-        )
+        .on(RoomEvent.RoomMetadataChanged, () => updateRecordingState(room))
         .on(RoomEvent.Disconnected, () => {
           if (session.current?.room === room) {
             stop();
@@ -355,7 +385,7 @@ export function PhoneCamera() {
       };
       sendCameraEvent({ type: "PUBLISHED" });
       setStatus("Live: publishing camera video to the room.");
-      setRecording(roomIsRecording(room));
+      updateRecordingState(room);
       void keepScreenAwake();
       await updateCameraControls(track);
     } catch (error: unknown) {
@@ -429,6 +459,9 @@ export function PhoneCamera() {
       closeSession();
     };
   }, [closeSession, keepScreenAwake, stop]);
+
+  const { label: orientationLabel, Icon: OrientationIcon } =
+    orientationOptions[orientation];
 
   return (
     <section className="phone-camera">
@@ -520,36 +553,75 @@ export function PhoneCamera() {
         {recording && <Badge className="recording-marker">Recording</Badge>}
       </div>
       <FieldSet className="gap-2">
-        <FieldLegend variant="label" id="video-orientation-label">
-          Video orientation
-        </FieldLegend>
-        <div className="camera-toggles flex flex-wrap gap-2">
-          <ToggleGroup<CameraOrientation>
-            aria-labelledby="video-orientation-label"
-            className="flex-[2]"
-            variant="outline"
-            value={[orientation]}
+        <FieldLegend variant="label">Video orientation</FieldLegend>
+        <div className="flex items-center gap-2">
+          <DropdownMenu
             disabled={recording}
-            onValueChange={([selectedOrientation]) => {
-              if (!selectedOrientation) return;
-              orientationRef.current = selectedOrientation;
-              setOrientation(selectedOrientation);
-            }}
+            modal={false}
+            open={orientationMenuOpen}
+            onOpenChange={setOrientationMenuOpen}
           >
-            <ToggleGroupItem value="portrait">Portrait</ToggleGroupItem>
-            <ToggleGroupItem value="landscape">Landscape</ToggleGroupItem>
-          </ToggleGroup>
-          <Toggle
-            disabled={recording}
-            variant="outline"
-            pressed={flipped}
-            onPressedChange={(pressed) => {
-              flippedRef.current = pressed;
-              setFlipped(pressed);
-            }}
-          >
-            Flip 180°
-          </Toggle>
+            <DropdownMenuIconTrigger
+              label={`Video orientation: ${orientationLabel}`}
+              tooltip="Change video orientation"
+              variant="outline"
+            >
+              <OrientationIcon aria-hidden="true" />
+            </DropdownMenuIconTrigger>
+            <DropdownMenuContent className="min-w-42" collisionPadding={12}>
+              <DropdownMenuRadioGroup
+                aria-label="Video orientation"
+                value={orientation}
+                onValueChange={(selectedOrientation) => {
+                  if (
+                    selectedOrientation !== "portrait" &&
+                    selectedOrientation !== "landscape"
+                  )
+                    return;
+                  orientationRef.current = selectedOrientation;
+                  setOrientation(selectedOrientation);
+                }}
+              >
+                {(["portrait", "landscape"] as const).map((option) => {
+                  const { label, Icon } = orientationOptions[option];
+                  return (
+                    <DropdownMenuRadioItem
+                      className="min-h-11"
+                      closeOnClick
+                      key={option}
+                      value={option}
+                    >
+                      <Icon aria-hidden="true" />
+                      {label}
+                    </DropdownMenuRadioItem>
+                  );
+                })}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Toggle
+                  aria-label="Flip 180°"
+                  className="size-11 aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+                  disabled={recording}
+                  variant="outline"
+                  pressed={flipped}
+                  onPressedChange={(pressed) => {
+                    flippedRef.current = pressed;
+                    setFlipped(pressed);
+                  }}
+                />
+              }
+            >
+              <RotateCwIcon
+                aria-hidden="true"
+                className="group-aria-pressed/toggle:rotate-180"
+              />
+            </TooltipTrigger>
+            <TooltipContent sideOffset={8}>Flip 180°</TooltipContent>
+          </Tooltip>
         </div>
       </FieldSet>
       {cameras.length > 1 && (

@@ -1,6 +1,13 @@
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { cn } from "cn";
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import type { ComponentProps, ReactNode } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
@@ -8,6 +15,49 @@ function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
 
 function DropdownMenuTrigger({ ...props }: MenuPrimitive.Trigger.Props) {
   return <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />;
+}
+
+function DropdownMenuIconTrigger({
+  label,
+  tooltip,
+  children,
+  className,
+  chevronClassName,
+  variant = "ghost",
+}: Pick<ComponentProps<typeof Button>, "className" | "variant"> & {
+  label: string;
+  tooltip: string;
+  children: ReactNode;
+  chevronClassName?: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <DropdownMenuTrigger
+            render={
+              <Button
+                className={cn(
+                  "h-11 min-w-11 gap-1 px-2 aria-expanded:bg-accent",
+                  className,
+                )}
+                type="button"
+                variant={variant}
+                aria-label={label}
+              />
+            }
+          />
+        }
+      >
+        {children}
+        <ChevronDownIcon
+          className={cn("size-3", chevronClassName)}
+          aria-hidden="true"
+        />
+      </TooltipTrigger>
+      <TooltipContent sideOffset={8}>{tooltip}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 function DropdownMenuContent({
@@ -89,7 +139,7 @@ function DropdownMenuRadioItem({
 export {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuIconTrigger,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuTrigger,
 };

@@ -1,19 +1,13 @@
-import { ChevronDownIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
+import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuIconTrigger,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const themeOptions = {
   system: { label: "System", Icon: MonitorIcon },
@@ -80,29 +74,14 @@ export function ThemeMenu({
   return (
     <TooltipProvider delay={400}>
       <DropdownMenu modal={false}>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    className="h-11 min-w-11 gap-1 px-2 text-muted-foreground aria-expanded:bg-accent group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:min-w-0 group-data-[collapsible=icon]:p-0"
-                    type="button"
-                    variant="ghost"
-                    aria-label={`Theme: ${label}`}
-                  />
-                }
-              />
-            }
-          >
-            <Icon aria-hidden="true" />
-            <ChevronDownIcon
-              className="size-3 group-data-[collapsible=icon]:hidden"
-              aria-hidden="true"
-            />
-          </TooltipTrigger>
-          <TooltipContent sideOffset={8}>Change theme</TooltipContent>
-        </Tooltip>
+        <DropdownMenuIconTrigger
+          label={`Theme: ${label}`}
+          tooltip="Change theme"
+          className="text-muted-foreground group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:min-w-0 group-data-[collapsible=icon]:p-0"
+          chevronClassName="group-data-[collapsible=icon]:hidden"
+        >
+          <Icon aria-hidden="true" />
+        </DropdownMenuIconTrigger>
         <DropdownMenuContent
           className="min-w-42"
           align="start"

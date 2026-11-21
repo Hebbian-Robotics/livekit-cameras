@@ -84,7 +84,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  color: #b0b0b0;
+  color: var(--video-foreground);
   pointer-events: none;
 }
 
@@ -92,8 +92,8 @@
   position: absolute;
   top: 12px;
   left: 12px;
-  background: #a23a36;
-  color: white;
+  background: var(--recording-surface);
+  color: var(--recording-foreground);
 }
 
 .camera-toggles button {

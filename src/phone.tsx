@@ -638,7 +638,7 @@ export function PhoneCamera({
       </p>
       <Button
         className="stream-button"
-        variant={cameraState === "streaming" ? "destructive" : "default"}
+        variant={cameraState === "streaming" ? "stop" : "default"}
         type="button"
         disabled={cameraState === "starting"}
         onClick={() =>

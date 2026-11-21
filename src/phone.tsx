@@ -1,5 +1,4 @@
 import { useMachine } from "@xstate/react";
-import { decodeJwt } from "jose";
 import {
   ConnectionState,
   createLocalVideoTrack,
@@ -27,13 +26,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   Field,
-  FieldGroup,
   FieldLabel,
   FieldLegend,
   FieldSet,
   FieldTitle,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import {
   NativeSelect,
   NativeSelectOption,
@@ -47,7 +44,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { errorMessage } from "./errors.js";
-import { liveKitServerUrl } from "./livekit-url.js";
 import { phoneCameraMachine } from "./phone-camera-machine.js";
 import { type PhoneStartStage, phoneStartError } from "./phone-errors.js";
 import {
@@ -62,6 +58,7 @@ import {
   type CameraOrientation,
   orientedFrameSize,
 } from "./phone-orientation.js";
+import type { ClaimRoomConnection, RoomConnection } from "./room-connection.js";
 import { roomIsRecording } from "./room-recording.js";
 import "./phone.css";
 
@@ -76,27 +73,13 @@ const orientationOptions = {
   { label: string; Icon: typeof RectangleVerticalIcon }
 >;
 
-type Invite = { serverUrl: string; token: string; cameraName: string };
 type CameraSession = {
   room: Room;
   track: LocalVideoTrack;
   stopOutput: () => void;
   refreshOutput: () => Promise<void>;
+  releaseConnection: () => void;
 };
-
-function readInvite(): Invite | null {
-  const parameters = new URLSearchParams(location.hash.slice(1));
-  if (parameters.get("view") === "room") return null;
-  const serverUrl = parameters.get("url");
-  const token = parameters.get("token");
-  if (!serverUrl || !token) return null;
-  try {
-    const cameraName = decodeJwt(token).sub;
-    return cameraName ? { serverUrl, token, cameraName } : null;
-  } catch {
-    return null;
-  }
-}
 
 function captureOptions(deviceId?: string): VideoCaptureOptions {
   return {
@@ -210,9 +193,13 @@ async function createOrientedOutput(
   }
 }
 
-export function PhoneCamera() {
-  const [invite, setInvite] = useState(readInvite);
-  const inviteRef = useRef(invite);
+export function PhoneCamera({
+  connection,
+  claimRoomConnection,
+}: {
+  connection: RoomConnection;
+  claimRoomConnection: ClaimRoomConnection;
+}) {
   const [cameraSnapshot, sendCameraEvent] = useMachine(phoneCameraMachine, {
     input: { start: () => startCamera(), stop: () => closeSession() },
   });
@@ -221,11 +208,7 @@ export function PhoneCamera() {
     : cameraSnapshot.matches({ active: "streaming" })
       ? "streaming"
       : "idle";
-  const [status, setStatus] = useState(
-    invite
-      ? "Ready to stream."
-      : "Enter your LiveKit server URL and publishing token, or open a camera invite link.",
-  );
+  const [status, setStatus] = useState("Ready to stream.");
   const [recording, setRecording] = useState(false);
   const [orientation, setOrientation] =
     useState<CameraOrientation>("landscape");
@@ -269,7 +252,10 @@ export function PhoneCamera() {
       current.stopOutput();
       current.track.stop();
       if (preview.current) preview.current.srcObject = null;
-      void current.room.disconnect();
+      void current.room
+        .disconnect()
+        .catch(() => {})
+        .finally(current.releaseConnection);
     }
     void wakeLock.current?.release();
     wakeLock.current = null;
@@ -317,8 +303,15 @@ export function PhoneCamera() {
   }
 
   async function startCamera(): Promise<void> {
-    const currentInvite = inviteRef.current;
-    if (!currentInvite) return;
+    const releaseConnection = claimRoomConnection(connection);
+    if (!releaseConnection) {
+      setStatus(
+        "Leave the room in Room viewer or use a separate viewer token in Setup.",
+      );
+      sendCameraEvent({ type: "FAIL" });
+      return;
+    }
+    let sessionOwnsConnection = false;
     const currentGeneration = ++generation.current;
     setStatus("Connecting…");
     const room = new Room({ adaptiveStream: false, dynacast: false });
@@ -354,7 +347,7 @@ export function PhoneCamera() {
         });
       sendCameraEvent({ type: "PREPARED" });
       stage = "connect";
-      await room.connect(currentInvite.serverUrl, currentInvite.token);
+      await room.connect(connection.serverUrl, connection.token.value);
       if (generation.current !== currentGeneration) {
         output.stop();
         track.stop();
@@ -382,7 +375,9 @@ export function PhoneCamera() {
         track,
         stopOutput: output.stop,
         refreshOutput: output.refresh,
+        releaseConnection,
       };
+      sessionOwnsConnection = true;
       sendCameraEvent({ type: "PUBLISHED" });
       setStatus("Live: publishing camera video to the room.");
       updateRecordingState(room);
@@ -395,9 +390,9 @@ export function PhoneCamera() {
       await room.disconnect().catch(() => {});
       if (generation.current !== currentGeneration) return;
       sendCameraEvent({ type: "FAIL" });
-      setStatus(
-        phoneStartError(error, stage, decodeJwt(currentInvite.token).exp),
-      );
+      setStatus(phoneStartError(error, stage, connection.token.expiresAt));
+    } finally {
+      if (!sessionOwnsConnection) releaseConnection();
     }
   }
 
@@ -482,61 +477,7 @@ export function PhoneCamera() {
         Place your device where you need a camera. Keep this page open while
         streaming.
       </p>
-      {!invite && (
-        <form
-          className="connection-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const fields = new FormData(event.currentTarget);
-            const serverUrl = String(fields.get("serverUrl") ?? "").trim();
-            const token = String(fields.get("token") ?? "").trim();
-            try {
-              liveKitServerUrl(serverUrl);
-              const cameraName = decodeJwt(token).sub;
-              if (!cameraName)
-                throw new Error(
-                  "The token must include a participant identity.",
-                );
-              inviteRef.current = { serverUrl, token, cameraName };
-              setInvite(inviteRef.current);
-              setStatus("Ready to stream.");
-            } catch (error: unknown) {
-              setStatus(errorMessage(error, "Invalid connection details."));
-            }
-          }}
-        >
-          <FieldGroup className="[&_input]:min-h-11">
-            <Field>
-              <FieldLabel htmlFor="publisher-server-url">
-                LiveKit server URL
-              </FieldLabel>
-              <Input
-                id="publisher-server-url"
-                name="serverUrl"
-                type="url"
-                placeholder="wss://your-project.livekit.cloud"
-                required
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="publisher-token">
-                Publishing token
-              </FieldLabel>
-              <Input
-                id="publisher-token"
-                name="token"
-                type="password"
-                autoComplete="off"
-                required
-              />
-            </Field>
-          </FieldGroup>
-          <Button type="submit" className="stream-button">
-            Use connection
-          </Button>
-        </form>
-      )}
-      {invite && <p className="camera-name">Camera: {invite.cameraName}</p>}
+      <p className="camera-name">Camera: {connection.token.identity}</p>
       <div
         className={`picture ${cameraState === "streaming" ? "is-live" : ""}`}
       >
@@ -699,7 +640,7 @@ export function PhoneCamera() {
         className="stream-button"
         variant={cameraState === "streaming" ? "destructive" : "default"}
         type="button"
-        disabled={!invite || cameraState === "starting"}
+        disabled={cameraState === "starting"}
         onClick={() =>
           cameraState === "streaming"
             ? stop()

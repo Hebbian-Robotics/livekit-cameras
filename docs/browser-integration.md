@@ -13,10 +13,16 @@ Any backend can construct this interface; TypeScript is not required:
 https://your-camera-page.example/#url=<encoded-livekit-url>&token=<encoded-jwt>
 ```
 
-URL-encode the fragment values. A camera token must permit room join and camera
-publication. The example disables subscription and data publishing. A viewer
-invite adds `view=room` and needs subscription permission. The token's participant
-identity names the camera; give each camera a distinct identity.
+URL-encode the fragment values. A camera invite opens **Stream** and must permit
+room join and camera publication. The example disables subscription and data
+publishing. A viewer invite adds `view=room`, opens **Room viewer**, and needs
+subscription permission. Both invite types populate **Setup**. The token's
+participant identity names the camera. Give each camera a distinct identity.
+
+Use a token with both grants to share one connection setting between pages. To
+stream and view at the same time from this app, use a separate viewer token
+with a distinct participant identity. Saving updated credentials ends any
+connection that used the credentials you changed.
 
 The page displays decoded identity/expiry information; LiveKit verifies access.
 API secrets belong on your trusted backend, never in the page or invite.
@@ -30,8 +36,9 @@ Other metadata fields are ignored.
 
 ## Token and camera handling
 
-- Treat invite URLs and QR codes as bearer credentials. URLs may remain in
-  browser history. The URL fragment is not sent in the page's HTTP request.
+- Treat invite URLs and QR codes as bearer credentials. The app removes the
+  credential fragment from the address bar after loading the invite. The browser
+  sends the page's HTTP request without the fragment.
 - Manually entered tokens stay in memory. Lens selection is stored locally.
   The app includes no analytics, third-party runtime scripts or microphone capture.
 - The hosting operator's JavaScript can read the token. Trust the host or deploy

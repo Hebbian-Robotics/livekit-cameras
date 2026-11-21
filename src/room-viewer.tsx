@@ -8,10 +8,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { errorMessage } from "./errors.js";
-import { liveKitServerUrl } from "./livekit-url.js";
+import type { ClaimRoomConnection, RoomConnection } from "./room-connection.js";
 
 type VideoFeed = {
   id: string;
@@ -48,50 +46,50 @@ function VideoTile({ feed }: { feed: VideoFeed }) {
   );
 }
 
-function inviteField(name: string): string {
-  const fields = new URLSearchParams(location.hash.slice(1));
-  return fields.get("view") === "room" ? (fields.get(name) ?? "") : "";
-}
-
-export function RoomViewer() {
+export function RoomViewer({
+  connection,
+  claimRoomConnection,
+}: {
+  connection: RoomConnection;
+  claimRoomConnection: ClaimRoomConnection;
+}) {
   const [viewerState, setViewerState] = useState<ViewerState>("disconnected");
-  const [status, setStatus] = useState(
-    "Enter a LiveKit server URL and a viewer token.",
-  );
+  const [status, setStatus] = useState("Ready to join.");
   const [feeds, setFeeds] = useState<VideoFeed[]>([]);
-  const [serverUrl, setServerUrl] = useState(() => inviteField("url"));
-  const [token, setToken] = useState(() => inviteField("token"));
   const room = useRef<Room | null>(null);
+  const closeRoom = useRef<(() => void) | null>(null);
   const generation = useRef(0);
 
-  const disconnect = useCallback(() => {
+  const disposeRoom = useCallback(() => {
     generation.current += 1;
-    const previousRoom = room.current;
     room.current = null;
-    if (previousRoom) void previousRoom.disconnect();
+    closeRoom.current?.();
+    closeRoom.current = null;
+  }, []);
+  const disconnect = useCallback(() => {
+    disposeRoom();
     setFeeds([]);
     setViewerState("disconnected");
-  }, []);
-  useEffect(
-    () => () => {
-      generation.current += 1;
-      const previousRoom = room.current;
-      room.current = null;
-      if (previousRoom) void previousRoom.disconnect();
-    },
-    [],
-  );
+  }, [disposeRoom]);
+  useEffect(() => disposeRoom, [disposeRoom]);
 
   async function connect(): Promise<void> {
-    disconnect();
-    const attempt = generation.current;
-    let nextRoom: Room | null = null;
+    if (room.current) return;
+    const releaseConnection = claimRoomConnection(connection);
+    if (!releaseConnection) {
+      setStatus("Stop streaming or add a separate viewer token in Setup.");
+      return;
+    }
+    const attempt = ++generation.current;
+    const currentRoom = new Room({ adaptiveStream: true, dynacast: false });
+    room.current = currentRoom;
+    closeRoom.current = () => {
+      void currentRoom
+        .disconnect()
+        .catch(() => {})
+        .finally(releaseConnection);
+    };
     try {
-      const url = liveKitServerUrl(serverUrl);
-      if (!token.trim()) throw new Error("Enter a viewer token.");
-      nextRoom = new Room({ adaptiveStream: true, dynacast: false });
-      const currentRoom = nextRoom;
-      room.current = currentRoom;
       currentRoom.on(
         RoomEvent.TrackSubscribed,
         (track, publication, participant) => {
@@ -140,6 +138,8 @@ export function RoomViewer() {
       currentRoom.on(RoomEvent.Disconnected, () => {
         if (room.current === currentRoom) {
           room.current = null;
+          closeRoom.current = null;
+          releaseConnection();
           setFeeds([]);
           setViewerState("disconnected");
           setStatus("Disconnected from the room.");
@@ -147,7 +147,7 @@ export function RoomViewer() {
       });
       setViewerState("connecting");
       setStatus("Connecting to room…");
-      await currentRoom.connect(url.href, token.trim(), {
+      await currentRoom.connect(connection.serverUrl, connection.token.value, {
         autoSubscribe: false,
       });
       if (attempt !== generation.current || room.current !== currentRoom) {
@@ -163,10 +163,8 @@ export function RoomViewer() {
       setViewerState("connected");
       setStatus("Connected. Waiting for camera feeds.");
     } catch (error: unknown) {
-      if (nextRoom) await nextRoom.disconnect().catch(() => {});
       if (attempt !== generation.current) return;
-      room.current = null;
-      setViewerState("disconnected");
+      disconnect();
       setStatus(`Could not join room: ${errorMessage(error, "unknown error")}`);
     }
   }
@@ -191,51 +189,17 @@ export function RoomViewer() {
         </Badge>
       </header>
       <p className="phone-intro">
-        Watch video tracks in a LiveKit room. Use a token with permission to
-        subscribe; a camera publishing invite cannot view the room.
+        Watch camera feeds in the configured LiveKit room.
       </p>
       {!connected && (
-        <form
-          className="connection-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void connect();
-          }}
+        <Button
+          className="stream-button"
+          type="button"
+          disabled={viewerState === "connecting"}
+          onClick={() => void connect()}
         >
-          <FieldGroup className="[&_input]:min-h-11">
-            <Field>
-              <FieldLabel htmlFor="viewer-server-url">
-                LiveKit server URL
-              </FieldLabel>
-              <Input
-                id="viewer-server-url"
-                type="url"
-                value={serverUrl}
-                onChange={(event) => setServerUrl(event.currentTarget.value)}
-                placeholder="wss://your-project.livekit.cloud"
-                required
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="viewer-token">Viewer token</FieldLabel>
-              <Input
-                id="viewer-token"
-                type="password"
-                value={token}
-                onChange={(event) => setToken(event.currentTarget.value)}
-                autoComplete="off"
-                required
-              />
-            </Field>
-          </FieldGroup>
-          <Button
-            className="stream-button"
-            type="submit"
-            disabled={viewerState === "connecting"}
-          >
-            {viewerState === "connecting" ? "Connecting…" : "Join room"}
-          </Button>
-        </form>
+          {viewerState === "connecting" ? "Connecting…" : "Join room"}
+        </Button>
       )}
       {connected && (
         <>

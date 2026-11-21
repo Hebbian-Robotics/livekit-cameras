@@ -1,6 +1,7 @@
-import { LayoutGridIcon, VideoIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { LayoutGridIcon, SettingsIcon, VideoIcon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -15,13 +16,21 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { errorMessage } from "./errors.js";
 import { PhoneCamera } from "./phone.js";
+import {
+  createRoomConnectionClaims,
+  type RoomSettings,
+  readRoomSettings,
+} from "./room-connection.js";
+import { RoomSetup } from "./room-setup.js";
 import { RoomViewer } from "./room-viewer.js";
 import { ThemeMenu, useThemePreference } from "./theme-menu.js";
 import "./theme.css";
 import "./phone.css";
 
 const cameraViews = [
+  { id: "setup", label: "Setup", Icon: SettingsIcon },
   { id: "publish", label: "Stream", Icon: VideoIcon },
   { id: "room", label: "Room viewer", Icon: LayoutGridIcon },
 ] as const;
@@ -31,13 +40,74 @@ type CameraView = (typeof cameraViews)[number]["id"];
 const navigationId = "camera-navigation";
 const sourceLabel = "View source on GitHub";
 
-function CameraShell() {
-  const { theme, changeTheme } = useThemePreference();
-  const [activeView, setActiveView] = useState<CameraView>(() =>
-    new URLSearchParams(location.hash.slice(1)).get("view") === "room"
-      ? "room"
-      : "publish",
+type CameraLocation =
+  | { view: CameraView }
+  | { view: "publish" | "room"; settings: RoomSettings }
+  | { view: "setup"; inviteError: string };
+
+function cameraViewHref(view: CameraView): string {
+  return `#view=${view}`;
+}
+
+function readCameraLocation(): CameraLocation {
+  const fields = new URLSearchParams(location.hash.slice(1));
+  const requestedView = fields.get("view");
+  if (!fields.has("url") && !fields.has("token")) {
+    return {
+      view:
+        requestedView === "room" || requestedView === "publish"
+          ? requestedView
+          : "setup",
+    };
+  }
+  const view = requestedView === "room" ? "room" : "publish";
+  try {
+    const serverUrl = fields.get("url");
+    const token = fields.get("token");
+    if (!serverUrl || !token) throw new Error("The invite is incomplete.");
+    const settings = readRoomSettings(serverUrl, token);
+    history.replaceState(history.state, "", cameraViewHref(view));
+    return { view, settings };
+  } catch (error: unknown) {
+    history.replaceState(history.state, "", cameraViewHref("setup"));
+    return {
+      view: "setup",
+      inviteError: errorMessage(error, "The invite is invalid."),
+    };
+  }
+}
+
+function SetupRequired({ title, message }: { title: string; message: string }) {
+  return (
+    <section className="phone-camera">
+      <header className="phone-header">
+        <h1>{title}</h1>
+      </header>
+      <p className="phone-intro">{message}</p>
+      <a
+        className={`stream-button ${buttonVariants()}`}
+        href={cameraViewHref("setup")}
+      >
+        Open setup
+      </a>
+    </section>
   );
+}
+
+function CameraShell({ initialLocation }: { initialLocation: CameraLocation }) {
+  const { theme, changeTheme } = useThemePreference();
+  const [activeView, setActiveView] = useState(initialLocation.view);
+  const [roomSettings, setRoomSettings] = useState(() => ({
+    settings:
+      "settings" in initialLocation ? initialLocation.settings : undefined,
+    streamRevision: 0,
+    viewerRevision: 0,
+  }));
+  const [inviteRevision, setInviteRevision] = useState(0);
+  const [inviteError, setInviteError] = useState(
+    "inviteError" in initialLocation ? initialLocation.inviteError : undefined,
+  );
+  const [claimRoomConnection] = useState(createRoomConnectionClaims);
   const { isMobile, open, openMobile, setOpenMobile } = useSidebar();
   const navigationTrigger = useRef<HTMLButtonElement>(null);
   const navigationExpanded = isMobile ? openMobile : open;
@@ -46,6 +116,44 @@ function CameraShell() {
     : open
       ? "Collapse navigation"
       : "Expand navigation";
+  const settings = roomSettings.settings;
+  const viewerToken = settings?.viewerToken ?? settings?.token;
+
+  const saveRoomSettings = useCallback((nextSettings: RoomSettings) => {
+    setRoomSettings((previous) => {
+      const previousSettings = previous.settings;
+      const serverChanged =
+        previousSettings?.serverUrl !== nextSettings.serverUrl;
+      const streamChanged =
+        serverChanged ||
+        previousSettings?.token.value !== nextSettings.token.value;
+      const viewerChanged =
+        serverChanged ||
+        (previousSettings?.viewerToken ?? previousSettings?.token)?.value !==
+          (nextSettings.viewerToken ?? nextSettings.token).value;
+      return {
+        settings: nextSettings,
+        streamRevision: previous.streamRevision + Number(streamChanged),
+        viewerRevision: previous.viewerRevision + Number(viewerChanged),
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    function onHashChange() {
+      const nextLocation = readCameraLocation();
+      setActiveView(nextLocation.view);
+      if ("settings" in nextLocation) saveRoomSettings(nextLocation.settings);
+      if ("settings" in nextLocation || "inviteError" in nextLocation) {
+        setInviteError(
+          "inviteError" in nextLocation ? nextLocation.inviteError : undefined,
+        );
+        setInviteRevision((revision) => revision + 1);
+      }
+    }
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [saveRoomSettings]);
 
   return (
     <>
@@ -72,16 +180,13 @@ function CameraShell() {
               {cameraViews.map(({ id, label, Icon }) => (
                 <SidebarMenuItem key={id}>
                   <SidebarMenuButton
-                    type="button"
+                    render={<a href={cameraViewHref(id)} />}
                     aria-current={activeView === id ? "page" : undefined}
                     isActive={activeView === id}
                     aria-label={label}
                     tooltip={label}
                     className="h-11 data-active:font-semibold"
-                    onClick={() => {
-                      setActiveView(id);
-                      setOpenMobile(false);
-                    }}
+                    onClick={() => setOpenMobile(false)}
                   >
                     <Icon aria-hidden="true" />
                     <span>{label}</span>
@@ -123,11 +228,53 @@ function CameraShell() {
             className="size-11"
           />
         </div>
-        <div hidden={activeView !== "publish"}>
-          <PhoneCamera />
+        <div hidden={activeView !== "setup"}>
+          <RoomSetup
+            key={inviteRevision}
+            settings={settings}
+            inviteError={inviteError}
+            onSave={saveRoomSettings}
+          />
         </div>
-        <div hidden={activeView !== "room"}>
-          <RoomViewer />
+        <div
+          hidden={activeView !== "publish"}
+          key={`stream-${roomSettings.streamRevision}`}
+        >
+          {settings?.token.canStream ? (
+            <PhoneCamera
+              connection={settings}
+              claimRoomConnection={claimRoomConnection}
+            />
+          ) : (
+            <SetupRequired
+              title="Browser camera"
+              message={
+                settings
+                  ? "Add a camera-publishing token in Setup."
+                  : "Save a LiveKit server URL and a token in Setup to stream."
+              }
+            />
+          )}
+        </div>
+        <div
+          hidden={activeView !== "room"}
+          key={`viewer-${roomSettings.viewerRevision}`}
+        >
+          {settings && viewerToken?.canView ? (
+            <RoomViewer
+              connection={{ serverUrl: settings.serverUrl, token: viewerToken }}
+              claimRoomConnection={claimRoomConnection}
+            />
+          ) : (
+            <SetupRequired
+              title="Room cameras"
+              message={
+                settings
+                  ? "Add a token with subscription permission in Setup."
+                  : "Save a LiveKit server URL and a token in Setup to join the room."
+              }
+            />
+          )}
         </div>
       </SidebarInset>
     </>
@@ -136,10 +283,11 @@ function CameraShell() {
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Camera tools root is missing");
+const initialLocation = readCameraLocation();
 createRoot(root).render(
   <TooltipProvider>
     <SidebarProvider>
-      <CameraShell />
+      <CameraShell initialLocation={initialLocation} />
     </SidebarProvider>
   </TooltipProvider>,
 );

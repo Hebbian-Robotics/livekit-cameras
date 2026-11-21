@@ -26,8 +26,9 @@ Before connecting, obtain a LiveKit server URL and a room-scoped participant tok
 See LiveKit's [tokens and grants](https://docs.livekit.io/frontends/reference/tokens-grants/)
 for token creation and permissions.
 
-1. Paste the URL and a camera-publishing token, or open an invite link.
-2. Allow camera access, then select **Start streaming**.
+1. In **Setup**, enter the server URL and a camera-publishing token, then save
+   the connection. A publishing invite link or QR code opens **Stream** directly.
+2. In **Stream**, select **Start streaming** and allow camera access.
 3. Keep the page visible and the device unlocked while streaming.
 
 The publisher sends video only, targeting 720p at 15 fps without simulcast.
@@ -60,10 +61,15 @@ token handling and recording indicator.
 
 ## Room viewer
 
-Select **Room viewer** and provide a URL and subscribe-enabled token. It watches
+Save a subscribe-enabled token in **Setup**, then select **Room viewer** and
+**Join room**. A viewer invite opens **Room viewer** directly. The viewer watches
 existing tracks, including cameras that join later, without opening a camera or
-playing audio. Switching between Stream and Room viewer keeps an active browser
-publication running. A publishing invite cannot subscribe to the room.
+playing audio.
+
+A token with publishing and subscription grants works on both pages. To use
+both connections at once, enter a **Separate viewer token** for a different
+participant identity in the same room. Switching pages keeps active room
+connections running.
 
 With the same server credentials and room configured above, run:
 

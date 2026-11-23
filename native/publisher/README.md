@@ -11,9 +11,15 @@ subcommand. An embedding executable must dispatch that subcommand to
 `capture::run_capture_process` before its normal argument parser. This also
 applies to snapshot consumers that embed the worker.
 
-Capture supplies the newest frame, not a queue of every frame. Persistent device
-identifiers retry; numeric indices stop after failure. Published frame metadata
-contains host receipt time, not sensor exposure time or synchronized camera time.
+Capture supplies the newest frame. The worker stops and reaps the capture process
+if the first complete frame takes more than 15 seconds or a subsequent frame
+takes more than 5 seconds. A caller can then resolve the current device and
+start another worker. Numeric indices stop after a capture failure because the
+index may point to a different camera after a reconnect.
+
+Use `publish_camera_frames` to publish from an existing capture worker if the
+application manages room reconnects and needs to keep capturing between
+connections. Published frame metadata contains host receipt time.
 
 ## Codec selection and diagnostics
 

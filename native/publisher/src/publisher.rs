@@ -1,5 +1,7 @@
 use crate::{
-    capture::CaptureWorker, config::CameraConfiguration, diagnostics::PublishingDiagnostics,
+    capture::{CaptureWorker, CapturedI420Frame},
+    config::CameraConfiguration,
+    diagnostics::PublishingDiagnostics,
     error::PublisherError,
 };
 use livekit::{
@@ -11,7 +13,7 @@ use livekit::{
         video_source::{RtcVideoSource, VideoResolution, native::NativeVideoSource},
     },
 };
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, watch},
     time::Instant,
@@ -21,6 +23,13 @@ use tokio_util::sync::CancellationToken;
 const MAXIMUM_FRAMES_PER_SECOND: u32 = 15;
 const FRAME_INTERVAL: Duration =
     Duration::from_nanos(1_000_000_000_u64.div_ceil(MAXIMUM_FRAMES_PER_SECOND as u64));
+
+/// Observable publication transitions within one room connection.
+#[derive(Debug, Clone, Copy)]
+pub enum PublicationEvent {
+    Publishing,
+    Reconnecting,
+}
 
 /// Publish one camera using an already issued room access token.
 ///
@@ -32,13 +41,49 @@ pub async fn publish_camera(
     access_token: &str,
     stopped: CancellationToken,
 ) -> Result<(), PublisherError> {
+    let capture = CaptureWorker::start(&camera)?;
+    let publication_stopped = stopped.child_token();
+    let publication = publish_camera_frames(
+        &camera,
+        server_url,
+        access_token,
+        capture.frames.clone(),
+        publication_stopped.clone(),
+        |_| {},
+    );
+    tokio::pin!(publication);
+    let publication_result = tokio::select! {
+        () = capture.finished() => {
+            publication_stopped.cancel();
+            publication.await
+        }
+        result = &mut publication => result,
+    };
+    let capture_result = capture.stop().await;
+    publication_result?;
+    capture_result
+}
+
+/// Publish frames from an existing capture worker for one room connection.
+///
+/// # Errors
+/// Returns room connection, publication or shutdown failures.
+pub async fn publish_camera_frames(
+    camera: &CameraConfiguration,
+    server_url: &str,
+    access_token: &str,
+    mut frames: watch::Receiver<Option<Arc<CapturedI420Frame>>>,
+    stopped: CancellationToken,
+    observe: impl Fn(PublicationEvent),
+) -> Result<(), PublisherError> {
     let mut options = RoomOptions::default();
     options.auto_subscribe = false;
     let (room, mut events) = tokio::select! {
         () = stopped.cancelled() => return Ok(()),
         connected = Room::connect(server_url, access_token, options) => connected?,
     };
-    let publication_result = publish_connected_camera(&camera, &room, &mut events, &stopped).await;
+    let publication_result =
+        publish_frames(camera, &room, &mut events, &mut frames, &stopped, observe).await;
     let disconnect_result = room.close().await;
     // Closing is attempted even after capture or publication fails.
     publication_result?;
@@ -46,26 +91,13 @@ pub async fn publish_camera(
     Ok(())
 }
 
-async fn publish_connected_camera(
-    camera: &CameraConfiguration,
-    room: &Room,
-    events: &mut mpsc::UnboundedReceiver<RoomEvent>,
-    stopped: &CancellationToken,
-) -> Result<(), PublisherError> {
-    let mut capture = CaptureWorker::start(camera)?;
-    let publication_result =
-        publish_frames(camera, room, events, &mut capture.frames, stopped).await;
-    let capture_result = capture.stop().await;
-    publication_result?;
-    capture_result
-}
-
 async fn publish_frames(
     camera: &CameraConfiguration,
     room: &Room,
     events: &mut mpsc::UnboundedReceiver<RoomEvent>,
-    frames: &mut watch::Receiver<Option<std::sync::Arc<crate::capture::CapturedI420Frame>>>,
+    frames: &mut watch::Receiver<Option<Arc<CapturedI420Frame>>>,
     stopped: &CancellationToken,
+    observe: impl Fn(PublicationEvent),
 ) -> Result<(), PublisherError> {
     let name = camera.name();
     let participant = room.local_participant();
@@ -79,9 +111,12 @@ async fn publish_frames(
             event = events.recv() => {
                 match event {
                     Some(RoomEvent::Disconnected { reason }) => return Err(PublisherError::Disconnected(format!("{reason:?}"))),
+                    Some(RoomEvent::Reconnecting) => observe(PublicationEvent::Reconnecting),
+                    Some(RoomEvent::Reconnected) if source.is_some() => observe(PublicationEvent::Publishing),
                     None => return Err(PublisherError::Disconnected("event stream closed".to_owned())),
-                    Some(_) => continue,
+                    Some(_) => {}
                 }
+                continue;
             }
             changed = frames.changed() => {
                 if changed.is_err() { return Ok(()); }
@@ -134,6 +169,7 @@ async fn publish_frames(
                 camera.publishing.diagnostics,
             ));
             source = Some(video_source);
+            observe(PublicationEvent::Publishing);
         }
         if let Some(video_source) = &source {
             let Some(frame) = frames.borrow_and_update().clone() else {

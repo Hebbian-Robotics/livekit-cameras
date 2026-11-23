@@ -1,5 +1,5 @@
 use crate::{
-    config::{CameraConfiguration, ReopenPolicy},
+    config::{CameraConfiguration, CameraDevice, ReopenPolicy},
     error::PublisherError,
 };
 use cameras::{CameraCapture, RawCapturedFrame, conversion::I420Frame};
@@ -45,10 +45,14 @@ impl CaptureWorker {
     pub fn start(camera: &CameraConfiguration) -> Result<Self, PublisherError> {
         let (frame_sender, frames) = watch::channel(None);
         let mut command = Command::new(std::env::current_exe()?);
+        command.arg("__capture").arg(camera.name());
+        match camera.device() {
+            CameraDevice::Selector(device) => command.arg(device),
+            CameraDevice::AvFoundationId(id) => {
+                command.arg(id.to_string()).arg("--avfoundation-id")
+            }
+        };
         command
-            .arg("__capture")
-            .arg(camera.name())
-            .arg(camera.device())
             .arg(std::process::id().to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -187,6 +191,8 @@ async fn read_frame(
 struct CaptureArguments {
     name: String,
     device: String,
+    #[arg(long)]
+    avfoundation_id: bool,
     /// The process id of the supervisor that spawned this process.
     supervisor: u32,
 }
@@ -201,8 +207,15 @@ pub fn run_capture_process() -> Result<(), PublisherError> {
     cameras::validate_camera_name(&arguments.name)?;
     #[cfg(unix)]
     watch_supervisor(supervisor)?;
+    let device = if arguments.avfoundation_id {
+        CameraDevice::AvFoundationId(arguments.device.parse().map_err(|_| {
+            PublisherError::Configuration("invalid numeric AVFoundation camera ID".into())
+        })?)
+    } else {
+        CameraDevice::Selector(arguments.device)
+    };
     cameras::initialize()?;
-    let reopen_policy = ReopenPolicy::for_device(&arguments.device);
+    let reopen_policy = device.reopen_policy();
     let mut backoff = crate::backoff::Backoff::new(REOPEN_DELAY_CAP);
     let mut output = std::io::stdout().lock();
     loop {
@@ -210,7 +223,7 @@ pub fn run_capture_process() -> Result<(), PublisherError> {
             return Ok(());
         }
         let attempt_started = std::time::Instant::now();
-        match capture_to_pipe(&arguments.device, &mut output, supervisor) {
+        match capture_to_pipe(&device, &mut output, supervisor) {
             Ok(()) => return Ok(()),
             Err(PublisherError::Io(error)) => return Err(error.into()),
             Err(error) => eprintln!("Camera {}: {error}", arguments.name),
@@ -218,17 +231,14 @@ pub fn run_capture_process() -> Result<(), PublisherError> {
         match reopen_policy {
             ReopenPolicy::Stop => {
                 eprintln!(
-                    "Camera {}: index {} unavailable or disconnected; stopped because reopening may select another camera",
-                    arguments.name, arguments.device
+                    "Camera {}: {device} unavailable or disconnected; capture stopped",
+                    arguments.name
                 );
                 return Ok(());
             }
             ReopenPolicy::Retry => {
                 let delay = backoff.next_delay(attempt_started.elapsed());
-                eprintln!(
-                    "Camera {}: reopening {} in {delay:?}",
-                    arguments.name, arguments.device
-                );
+                eprintln!("Camera {}: reopening {device} in {delay:?}", arguments.name);
                 std::thread::sleep(delay);
             }
         }
@@ -271,7 +281,7 @@ fn supervisor_exited(supervisor: u32) -> bool {
 }
 
 fn capture_to_pipe(
-    device: &str,
+    device: &CameraDevice,
     output: &mut impl Write,
     supervisor: u32,
 ) -> Result<(), PublisherError> {
@@ -279,10 +289,13 @@ fn capture_to_pipe(
     // without a bound; conversion or a slow pipe must not build up old images.
     let pending_capture = Arc::new(PendingCapture::<RawCapturedFrame>::default());
     let reader_capture = Arc::downgrade(&pending_capture);
-    let device = device.to_owned();
+    let device = device.clone();
     let capture_thread = std::thread::spawn(move || {
         let capture_result: Result<(), cameras::CameraError> = (|| {
-            let mut capture = CameraCapture::open(&device)?;
+            let mut capture = match device {
+                CameraDevice::Selector(selector) => CameraCapture::open(&selector)?,
+                CameraDevice::AvFoundationId(id) => CameraCapture::open_avfoundation_id(id)?,
+            };
             loop {
                 let raw_frame = capture.read_raw_frame()?;
                 let Some(pending_capture) = reader_capture.upgrade() else {

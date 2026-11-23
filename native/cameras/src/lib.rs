@@ -86,6 +86,30 @@ fn device_index(device: &str) -> Result<CameraIndex, CameraError> {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn exact_avfoundation_index(
+    expected_id: u64,
+    identifiers: impl Iterator<Item = String>,
+) -> Result<CameraIndex, CameraError> {
+    let mut matching_ids = identifiers.filter(|id| {
+        id.strip_prefix("0x")
+            .and_then(|hex| u64::from_str_radix(hex, 16).ok())
+            == Some(expected_id)
+    });
+    let id = matching_ids.next().ok_or_else(|| {
+        CameraError::Configuration(format!(
+            "AVFoundation camera {expected_id:#018x} is unavailable"
+        ))
+    })?;
+    if matching_ids.next().is_some() {
+        return Err(CameraError::Configuration(format!(
+            "Multiple AVFoundation cameras matched {expected_id:#018x}"
+        )));
+    }
+    // SAFETY: Opening by the unique ID avoids reinterpreting an index if the inventory changes.
+    Ok(CameraIndex::String(id))
+}
+
 #[derive(Debug)]
 pub struct CapturedFrame {
     /// Receipt time immediately after native capture, before colour conversion.
@@ -117,7 +141,30 @@ impl CameraCapture {
     /// # Errors
     /// Returns configuration or native errors for absent, busy or unsupported devices.
     pub fn open(device: &str) -> Result<Self, CameraError> {
-        let index = device_index(device)?;
+        Self::open_index(device_index(device)?, device)
+    }
+
+    /// Enumerate and open the unique `AVFoundation` camera with this USB capture ID.
+    ///
+    /// # Errors
+    /// Returns an error if `AVFoundation` is unavailable or the ID has no unique match.
+    pub fn open_avfoundation_id(expected_id: u64) -> Result<Self, CameraError> {
+        #[cfg(target_os = "macos")]
+        {
+            let index = exact_avfoundation_index(
+                expected_id,
+                list_cameras()?.into_iter().map(|device| device.misc()),
+            )?;
+            Self::open_index(index, &format!("{expected_id:#018x}"))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = expected_id;
+            Err(CameraError::UnsupportedPlatform)
+        }
+    }
+
+    fn open_index(index: CameraIndex, device: &str) -> Result<Self, CameraError> {
         #[cfg(target_os = "macos")]
         let formats = nokhwa_bindings_macos::AVCaptureDevice::new(&index)?.supported_formats()?;
         #[cfg(not(target_os = "macos"))]
@@ -341,5 +388,30 @@ mod platform_tests {
             ApiBackend::Video4Linux
         );
         assert!(backend_for_platform("other").is_err());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CameraError, CameraIndex, exact_avfoundation_index};
+
+    #[test]
+    fn avfoundation_open_keeps_the_unique_id_when_other_cameras_come_first()
+    -> Result<(), CameraError> {
+        let expected = 0x1470_0000_1234_abcd;
+        let webcam = "0x146000001234abcd";
+        let wrist = "0x147000001234abcd";
+        assert_eq!(
+            exact_avfoundation_index(expected, [webcam, wrist].into_iter().map(str::to_owned))?,
+            CameraIndex::String(wrist.to_owned())
+        );
+        assert!(
+            exact_avfoundation_index(expected, [webcam].into_iter().map(str::to_owned)).is_err()
+        );
+        assert!(
+            exact_avfoundation_index(expected, [wrist, wrist].into_iter().map(str::to_owned))
+                .is_err()
+        );
+        Ok(())
     }
 }

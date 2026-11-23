@@ -3,8 +3,34 @@ use crate::error::PublisherError;
 /// A named native camera and the operating-system identifier used to open it.
 pub struct CameraConfiguration {
     name: String,
-    device: String,
+    device: CameraDevice,
     pub publishing: PublishingOptions,
+}
+
+/// The camera identity passed to the native capture process.
+#[derive(Clone)]
+pub enum CameraDevice {
+    Selector(String),
+    AvFoundationId(u64),
+}
+
+impl CameraDevice {
+    pub(crate) fn reopen_policy(&self) -> ReopenPolicy {
+        match self {
+            Self::Selector(device) => ReopenPolicy::for_device(device),
+            // WHY: The outer supervisor can resolve the USB identity again after replugging.
+            Self::AvFoundationId(_) => ReopenPolicy::Stop,
+        }
+    }
+}
+
+impl std::fmt::Display for CameraDevice {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Selector(device) => formatter.write_str(device),
+            Self::AvFoundationId(id) => write!(formatter, "{id:#018x}"),
+        }
+    }
 }
 
 impl CameraConfiguration {
@@ -13,8 +39,16 @@ impl CameraConfiguration {
     /// # Errors
     /// Returns an error if the name is invalid or the device identifier is empty.
     pub fn new(name: String, device: String) -> Result<Self, PublisherError> {
+        Self::for_device(name, CameraDevice::Selector(device))
+    }
+
+    /// Configure a named camera using a native device selector.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid name or an empty explicit selector.
+    pub fn for_device(name: String, device: CameraDevice) -> Result<Self, PublisherError> {
         cameras::validate_camera_name(&name)?;
-        if device.is_empty() {
+        if matches!(&device, CameraDevice::Selector(selector) if selector.is_empty()) {
             return Err(PublisherError::Configuration(
                 "camera device cannot be empty".into(),
             ));
@@ -32,7 +66,7 @@ impl CameraConfiguration {
     }
 
     #[must_use]
-    pub fn device(&self) -> &str {
+    pub fn device(&self) -> &CameraDevice {
         &self.device
     }
 }
@@ -66,7 +100,11 @@ mod tests {
     }
 
     #[test]
-    fn indices_stop_but_persistent_identifiers_retry() {
+    fn resolved_devices_stop_but_persistent_selectors_retry() {
+        assert_eq!(
+            CameraDevice::AvFoundationId(1).reopen_policy(),
+            ReopenPolicy::Stop
+        );
         for device in ["0", "12", "0002", "99999999999999999999"] {
             assert_eq!(ReopenPolicy::for_device(device), ReopenPolicy::Stop);
         }

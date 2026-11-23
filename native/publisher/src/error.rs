@@ -10,6 +10,8 @@ pub enum PublisherError {
     Io(#[from] std::io::Error),
     #[error("camera subprocess exited with {0}")]
     CaptureProcess(std::process::ExitStatus),
+    #[error("No local camera frame received for {0:?}")]
+    CaptureTimeout(std::time::Duration),
     #[error("publisher task: {0}")]
     Task(#[from] tokio::task::JoinError),
     #[error("capture timestamp is outside the supported microsecond range")]

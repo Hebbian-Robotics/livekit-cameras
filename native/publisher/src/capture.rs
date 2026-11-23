@@ -11,11 +11,14 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    io::AsyncReadExt,
+    io::{AsyncRead, AsyncReadExt},
     process::{Child, ChildStdout, Command},
     sync::watch,
 };
+use tokio_util::sync::CancellationToken;
 
+const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(15);
+const FRAME_TIMEOUT: Duration = Duration::from_secs(5);
 const REOPEN_DELAY_CAP: Duration = Duration::from_secs(3);
 /// How often a capture process that is waiting for a frame checks that its supervisor lives.
 const SUPERVISOR_CHECK_INTERVAL: Duration = Duration::from_secs(1);
@@ -29,8 +32,9 @@ pub struct CapturedI420Frame {
 /// Process ownership lets shutdown release even a stalled camera's native handles.
 pub struct CaptureWorker {
     pub frames: watch::Receiver<Option<Arc<CapturedI420Frame>>>,
-    child: Child,
-    reader: tokio::task::JoinHandle<Result<(), PublisherError>>,
+    stop_requested: CancellationToken,
+    finished: CancellationToken,
+    task: tokio::task::JoinHandle<Result<(), PublisherError>>,
 }
 
 impl CaptureWorker {
@@ -57,88 +61,126 @@ impl CaptureWorker {
         let output = child.stdout.take().ok_or_else(|| {
             PublisherError::Configuration("capture subprocess has no stdout pipe".to_owned())
         })?;
-        let reader = tokio::spawn(async move {
-            let result = read_frames(output, &frame_sender).await;
-            frame_sender.send_replace(None);
-            result
+        let stop_requested = CancellationToken::new();
+        let finished = CancellationToken::new();
+        let finished_guard = finished.clone().drop_guard();
+        let stop = stop_requested.clone();
+        let task = tokio::spawn(async move {
+            let _finished_guard = finished_guard;
+            supervise_capture(&mut child, output, frame_sender, stop, FRAME_TIMEOUT).await
         });
         Ok(Self {
             frames,
-            child,
-            reader,
+            stop_requested,
+            finished,
+            task,
         })
+    }
+
+    /// Wait for the capture process to finish and release its camera handles.
+    pub async fn finished(&self) {
+        self.finished.cancelled().await;
     }
 
     /// Stop the capture subprocess and release its resources.
     ///
     /// # Errors
-    /// Returns process, pipe or task failures observed during shutdown.
+    /// Returns process, pipe or task failures observed during capture or shutdown.
     pub async fn stop(mut self) -> Result<(), PublisherError> {
-        let completed_status = self.child.try_wait()?;
-        if completed_status.is_none() {
-            self.child.kill().await?;
-        }
-        // Interrupt a partial pipe read after terminating the producer.
-        self.reader.abort();
-        match self.reader.await {
-            Ok(result) if completed_status.is_some() => result?,
-            Err(error) if !error.is_cancelled() => return Err(error.into()),
-            _ => {}
-        }
-        if let Some(status) = completed_status
-            && !status.success()
-        {
-            return Err(PublisherError::CaptureProcess(status));
-        }
-        Ok(())
+        self.stop_requested.cancel();
+        (&mut self.task).await?
     }
 }
 
-async fn read_frames(
-    mut output: ChildStdout,
-    frame_sender: &watch::Sender<Option<Arc<CapturedI420Frame>>>,
+impl Drop for CaptureWorker {
+    fn drop(&mut self) {
+        self.stop_requested.cancel();
+    }
+}
+
+async fn supervise_capture(
+    child: &mut Child,
+    output: ChildStdout,
+    frame_sender: watch::Sender<Option<Arc<CapturedI420Frame>>>,
+    stop: CancellationToken,
+    frame_timeout: Duration,
 ) -> Result<(), PublisherError> {
+    let capture_result = tokio::select! {
+        biased;
+        result = read_frames(output, &frame_sender, frame_timeout) => result,
+        () = stop.cancelled() => Ok(()),
+    };
+    let completed_status = child.try_wait()?;
+    if completed_status.is_none() {
+        child.kill().await?;
+    }
+    // Release the camera before notifying consumers that they can reopen it.
+    frame_sender.send_replace(None);
+    capture_result?;
+    if let Some(status) = completed_status
+        && !status.success()
+    {
+        return Err(PublisherError::CaptureProcess(status));
+    }
+    Ok(())
+}
+
+async fn read_frames(
+    mut output: impl AsyncRead + Unpin,
+    frame_sender: &watch::Sender<Option<Arc<CapturedI420Frame>>>,
+    frame_timeout: Duration,
+) -> Result<(), PublisherError> {
+    // Native initialization can include a first-use permission prompt.
+    let mut deadline = FIRST_FRAME_TIMEOUT;
     loop {
-        let width = match output.read_u32_le().await {
-            Ok(width) => width,
-            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(()),
-            Err(error) => return Err(error.into()),
+        let frame = tokio::time::timeout(deadline, read_frame(&mut output))
+            .await
+            .map_err(|_| PublisherError::CaptureTimeout(deadline))??;
+        deadline = frame_timeout;
+        let Some(frame) = frame else {
+            return Ok(());
         };
-        let height = output.read_u32_le().await?;
-        let captured_at_unix_ns = output.read_u128_le().await?;
-        let width_pixels =
-            usize::try_from(width).map_err(|_| cameras::CameraError::InvalidFrame)?;
-        let height_pixels =
-            usize::try_from(height).map_err(|_| cameras::CameraError::InvalidFrame)?;
-        let plane_length = width_pixels
-            .checked_mul(height_pixels)
-            .ok_or(cameras::CameraError::InvalidFrame)?;
-        let chroma_length = width_pixels
-            .div_ceil(2)
-            .checked_mul(height_pixels.div_ceil(2))
-            .ok_or(cameras::CameraError::InvalidFrame)?;
-        let length = chroma_length
-            .checked_mul(2)
-            .and_then(|chroma| plane_length.checked_add(chroma))
-            .ok_or(cameras::CameraError::InvalidFrame)?;
-        let mut data = vec![0; length];
-        output.read_exact(&mut data).await?;
-        let i420 = I420Frame {
-            width,
-            height,
-            data,
-        };
-        i420.planes()?;
-        if frame_sender
-            .send(Some(Arc::new(CapturedI420Frame {
-                captured_at_unix_ns,
-                i420,
-            })))
-            .is_err()
-        {
+        if frame_sender.send(Some(Arc::new(frame))).is_err() {
             return Ok(());
         }
     }
+}
+
+async fn read_frame(
+    output: &mut (impl AsyncRead + Unpin),
+) -> Result<Option<CapturedI420Frame>, PublisherError> {
+    let width = match output.read_u32_le().await {
+        Ok(width) => width,
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    let height = output.read_u32_le().await?;
+    let captured_at_unix_ns = output.read_u128_le().await?;
+    let width_pixels = usize::try_from(width).map_err(|_| cameras::CameraError::InvalidFrame)?;
+    let height_pixels = usize::try_from(height).map_err(|_| cameras::CameraError::InvalidFrame)?;
+    let plane_length = width_pixels
+        .checked_mul(height_pixels)
+        .ok_or(cameras::CameraError::InvalidFrame)?;
+    let chroma_length = width_pixels
+        .div_ceil(2)
+        .checked_mul(height_pixels.div_ceil(2))
+        .ok_or(cameras::CameraError::InvalidFrame)?;
+    let length = chroma_length
+        .checked_mul(2)
+        .and_then(|chroma| plane_length.checked_add(chroma))
+        .ok_or(cameras::CameraError::InvalidFrame)?;
+    let mut data = vec![0; length];
+    output.read_exact(&mut data).await?;
+    let i420 = I420Frame {
+        width,
+        height,
+        data,
+    };
+    i420.planes()?;
+    Ok(Some(CapturedI420Frame {
+        captured_at_unix_ns,
+        i420,
+    }))
 }
 
 #[derive(Parser)]
@@ -342,7 +384,7 @@ impl<Frame> PendingCapture<Frame> {
     reason = "Test assertions fail immediately on unexpected outcomes"
 )]
 mod tests {
-    use super::PendingCapture;
+    use super::*;
 
     #[test]
     fn slow_conversion_resumes_with_the_newest_capture() {
@@ -354,5 +396,60 @@ mod tests {
         pending_capture.replace(3).unwrap();
         pending_capture.replace(4).unwrap();
         assert_eq!(pending_capture.state.lock().unwrap().frame.take(), Some(4));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stalled_capture_is_reaped_after_its_last_complete_frame()
+    -> Result<(), Box<dyn std::error::Error>> {
+        // One 1x1 I420 frame followed by the header of a second frame. The child
+        // keeps stdout open, like a camera blocked reading from its device.
+        use tokio::io::AsyncWriteExt;
+
+        let mut child = Command::new("sh")
+            .args(["-c", "cat; exec sleep 30"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()?;
+        let mut input = child.stdin.take().ok_or("missing child stdin")?;
+        let mut frames_with_partial_header = Vec::new();
+        frames_with_partial_header.extend(1_u32.to_le_bytes()); // Width
+        frames_with_partial_header.extend(1_u32.to_le_bytes()); // Height
+        frames_with_partial_header.extend(1_u128.to_le_bytes()); // Capture timestamp
+        frames_with_partial_header.extend([16, 128, 128]); // I420 planes
+        frames_with_partial_header.extend(1_u32.to_le_bytes()); // Next frame's width
+        input.write_all(&frames_with_partial_header).await?;
+        drop(input);
+        let output = child.stdout.take().ok_or("missing child stdout")?;
+        let (sender, mut frames) = watch::channel(None);
+        let frame_timeout = Duration::from_millis(300);
+        let capture = supervise_capture(
+            &mut child,
+            output,
+            sender,
+            CancellationToken::new(),
+            frame_timeout,
+        );
+        let observe_frame = async {
+            frames.changed().await?;
+            Ok::<_, watch::error::RecvError>(
+                frames
+                    .borrow_and_update()
+                    .as_ref()
+                    .map(|frame| frame.captured_at_unix_ns),
+            )
+        };
+        let (result, timestamp) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(capture, observe_frame)
+        })
+        .await?;
+        assert_eq!(timestamp?, Some(1));
+        assert!(
+            matches!(result, Err(PublisherError::CaptureTimeout(timeout)) if timeout == frame_timeout)
+        );
+        assert!(child.try_wait()?.is_some());
+        assert!(frames.borrow().is_none());
+        Ok(())
     }
 }

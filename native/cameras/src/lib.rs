@@ -151,10 +151,19 @@ impl CameraCapture {
     pub fn open_avfoundation_id(expected_id: u64) -> Result<Self, CameraError> {
         #[cfg(target_os = "macos")]
         {
-            let index = exact_avfoundation_index(
-                expected_id,
-                list_cameras()?.into_iter().map(|device| device.misc()),
-            )?;
+            let discovered_ids = list_cameras()?
+                .into_iter()
+                .map(|device| device.misc())
+                .collect::<Vec<_>>();
+            let index = exact_avfoundation_index(expected_id, discovered_ids.iter().cloned())
+                .inspect_err(|error| {
+                    tracing::debug!(
+                        expected_id = format_args!("{expected_id:#018x}"),
+                        ?discovered_ids,
+                        %error,
+                        "AVFoundation camera match failed",
+                    );
+                })?;
             Self::open_index(index, &format!("{expected_id:#018x}"))
         }
         #[cfg(not(target_os = "macos"))]

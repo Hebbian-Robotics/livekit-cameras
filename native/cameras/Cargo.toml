@@ -16,6 +16,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg"] }
 # Update platform backend pins together and verify them on the native CI matrix.
 nokhwa = { version = "=0.10.11", default-features = false }
 thiserror = "2"
+tracing = "0.1"
 yuv = "0.8.20"
 
 [target.'cfg(target_os = "linux")'.dependencies]

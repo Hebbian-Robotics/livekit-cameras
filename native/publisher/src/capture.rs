@@ -100,14 +100,14 @@ impl Drop for CaptureWorker {
 
 async fn supervise_capture(
     child: &mut Child,
-    output: ChildStdout,
+    mut output: ChildStdout,
     frame_sender: watch::Sender<Option<Arc<CapturedI420Frame>>>,
     stop: CancellationToken,
     frame_timeout: Duration,
 ) -> Result<(), PublisherError> {
     let capture_result = tokio::select! {
         biased;
-        result = read_frames(output, &frame_sender, frame_timeout) => result,
+        result = read_frames(&mut output, &frame_sender, frame_timeout) => result,
         () = stop.cancelled() => Ok(()),
     };
     let completed_status = child.try_wait()?;
